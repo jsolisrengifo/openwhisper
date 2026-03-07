@@ -14,9 +14,7 @@ type Settings struct {
 
 // DefaultSettings returns the default configuration
 func DefaultSettings() Settings {
-	return Settings{
-		Model: "gemini-2.0-flash",
-	}
+	return Settings{}
 }
 
 // settingsPath returns the path to the config file
@@ -43,11 +41,6 @@ func LoadSettings() (*Settings, error) {
 	var s Settings
 	if err := json.Unmarshal(data, &s); err != nil {
 		return nil, err
-	}
-
-	// Ensure model has a default value if empty
-	if s.Model == "" {
-		s.Model = "gemini-2.0-flash"
 	}
 
 	return &s, nil

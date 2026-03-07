@@ -17,13 +17,13 @@ func main() {
 
 	err := wails.Run(&options.App{
 		Title:             "OpenWhisper",
-		Width:             260,
-		Height:            58,
-		MinWidth:          220,
-		MinHeight:         50,
+		Width:             240,
+		Height:            46,
+		MinWidth:          240,
+		MinHeight:         46,
 		MaxWidth:          600,
 		MaxHeight:         400,
-		DisableResize:     false,
+		DisableResize:     true,
 		Frameless:         true,
 		AlwaysOnTop:       true,
 		BackgroundColour:  &options.RGBA{R: 18, G: 18, B: 18, A: 255},

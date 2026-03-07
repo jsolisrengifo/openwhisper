@@ -3,17 +3,17 @@ import { TranscribeAudio, PasteText, GetSettings, SaveSettings, SetWindowSize } 
 import { EventsOn, Quit } from '../wailsjs/runtime/runtime';
 
 // ── Estado de la aplicación ────────────────────────────────────────
-const MAIN_W = 260, MAIN_H = 58;
+const MAIN_W = 240, MAIN_H = 46;
 const SETTINGS_W = 360, SETTINGS_H = 250;
 
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
 let stream = null;
+let isConfigured = false;
 
 // ── Referencias DOM ────────────────────────────────────────────────
 const micBtn      = document.getElementById('mic-btn');
-const statusDot   = document.getElementById('status-dot');
 const statusText  = document.getElementById('status-text');
 const mainView    = document.getElementById('main-view');
 const settingsView = document.getElementById('settings-view');
@@ -29,11 +29,9 @@ const btnToggleKey = document.getElementById('btn-toggle-key');
 function setState(state, message) {
     const states = ['recording', 'transcribing', 'done', 'error'];
     micBtn.classList.remove(...states);
-    statusDot.classList.remove(...states);
 
     if (state) {
         micBtn.classList.add(state);
-        statusDot.classList.add(state);
     }
     statusText.textContent = message || 'Listo';
 }
@@ -52,7 +50,7 @@ function showSettingsView() {
     // Cargar configuración actual
     GetSettings().then(s => {
         apiKeyInput.value = s.api_key || '';
-        modelInput.value  = s.model || 'gemini-2.0-flash';
+        modelInput.value  = s.model || '';
     }).catch(() => {});
 }
 
@@ -137,8 +135,8 @@ function blobToBase64(blob) {
 }
 
 function toggleRecording() {
-    // No grabar si settings está abierto
     if (!settingsView.classList.contains('hidden')) return;
+    if (!isConfigured) { showSettingsView(); return; }
     if (isRecording) {
         stopRecording();
     } else {
@@ -166,7 +164,7 @@ btnToggleKey.addEventListener('click', () => {
 btnSave.addEventListener('click', async () => {
     const settings = {
         api_key: apiKeyInput.value.trim(),
-        model: modelInput.value.trim() || 'gemini-2.0-flash',
+        model: modelInput.value.trim(),
     };
 
     if (!settings.api_key) {
@@ -174,9 +172,16 @@ btnSave.addEventListener('click', async () => {
         setTimeout(() => { apiKeyInput.style.borderColor = ''; }, 2000);
         return;
     }
+    if (!settings.model) {
+        modelInput.style.borderColor = '#e53935';
+        setTimeout(() => { modelInput.style.borderColor = ''; }, 2000);
+        return;
+    }
 
     try {
         await SaveSettings(settings);
+        isConfigured = true;
+        statusText.classList.remove('warn');
         showMainView();
     } catch (err) {
         alert('Error guardando configuración: ' + err);
@@ -185,6 +190,19 @@ btnSave.addEventListener('click', async () => {
 
 // Escuchar evento del hotkey global (Ctrl+Space emitido desde Go)
 EventsOn('toggle-recording', toggleRecording);
+
+// Verificar configuración al iniciar
+GetSettings().then(s => {
+    isConfigured = !!(s.api_key && s.model);
+    if (!isConfigured) {
+        statusText.textContent = '⚙ Config. pendiente';
+        statusText.classList.add('warn');
+    }
+}).catch(() => {
+    isConfigured = false;
+    statusText.textContent = '⚙ Config. pendiente';
+    statusText.classList.add('warn');
+});
 
 // Escuchar evento para abrir settings (cuando no hay API key)
 EventsOn('open-settings', showSettingsView);

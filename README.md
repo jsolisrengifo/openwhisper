@@ -45,7 +45,16 @@ The compiled `.exe` will be placed in `build/bin/`.
 
 ## Configuration
 
-On first run, click the settings button to and enter your Gemini API key. The default model is `gemini-2.0-flash`, but you can enter any compatible Gemini model name.
+OpenWhisper requires two fields to operate. If either is missing when the app starts, the status bar will show **⚙ Config. pendiente** and recording will be blocked until configuration is complete.
+
+Click the **⚙** button to open settings and fill in:
+
+| Field | Description |
+|-------|-------------|
+| **API Key** | Your Google Gemini API key (e.g. `AIzaSy...`) |
+| **Model** | Any compatible Gemini model name (e.g. `gemini-2.0-flash`) |
+
+Both fields are required. The app has no hardcoded defaults — you choose the model.
 
 Settings are saved to:
 ```
