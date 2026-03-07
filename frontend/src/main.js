@@ -3,7 +3,7 @@ import { TranscribeAudio, PasteText, GetSettings, SaveSettings, SetWindowSize } 
 import { EventsOn, Quit } from '../wailsjs/runtime/runtime';
 
 // ── Estado de la aplicación ────────────────────────────────────────
-const MAIN_W = 300, MAIN_H = 110;
+const MAIN_W = 260, MAIN_H = 58;
 const SETTINGS_W = 360, SETTINGS_H = 250;
 
 let mediaRecorder = null;
@@ -35,7 +35,7 @@ function setState(state, message) {
         micBtn.classList.add(state);
         statusDot.classList.add(state);
     }
-    statusText.textContent = message || 'Listo · Ctrl+Space';
+    statusText.textContent = message || 'Listo';
 }
 
 function showMainView() {
@@ -63,7 +63,7 @@ async function startRecording() {
     try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     } catch (err) {
-        setState('error', 'Sin acceso al micrófono');
+        setState('error', 'Sin micrófono');
         setTimeout(() => setState(null), 3000);
         return;
     }
@@ -82,7 +82,7 @@ async function startRecording() {
 
     mediaRecorder.start();
     isRecording = true;
-    setState('recording', 'Grabando… Ctrl+Space para detener');
+    setState('recording', 'Grabando…');
 }
 
 function stopRecording() {
@@ -106,7 +106,7 @@ async function handleRecordingStop() {
         const text = await TranscribeAudio(base64, mimeType);
 
         if (!text || text.trim() === '') {
-            setState('error', 'Sin resultado de transcripción');
+            setState('error', 'Sin resultado');
             setTimeout(() => setState(null), 3000);
             return;
         }
@@ -118,7 +118,7 @@ async function handleRecordingStop() {
         setTimeout(() => setState(null), 2000);
     } catch (err) {
         const msg = (err && err.message) ? err.message : String(err);
-        setState('error', msg.length > 40 ? msg.substring(0, 40) + '…' : msg);
+        setState('error', msg.length > 30 ? msg.substring(0, 30) + '…' : msg);
         setTimeout(() => setState(null), 5000);
     }
 }

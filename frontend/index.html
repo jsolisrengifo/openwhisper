@@ -9,37 +9,30 @@
 <body>
 <div id="app">
 
-    <!-- Barra de título (también sirve como zona de arrastre) -->
-    <div class="titlebar" style="--wails-draggable:drag">
-        <span class="app-name">OpenWhisper</span>
-        <div class="controls" style="--wails-draggable:no-drag">
-            <button class="btn-icon" id="btn-settings" title="Configuración">⚙</button>
-            <button class="btn-icon btn-close" id="btn-close" title="Salir">✕</button>
-        </div>
-    </div>
-
-    <!-- Vista principal -->
-    <div id="main-view" class="view">
-        <button class="mic-btn" id="mic-btn" title="Grabar (Ctrl+Space)">
+    <!-- Vista principal - toda la ventana es zona de arrastre -->
+    <div id="main-view" class="view" style="--wails-draggable:drag">
+        <button class="mic-btn" id="mic-btn" title="Grabar (Ctrl+Space)" style="--wails-draggable:no-drag">
             <svg class="mic-icon" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
                 <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
             </svg>
         </button>
-        <div class="status-area">
-            <span class="status-dot" id="status-dot"></span>
-            <span class="status-text" id="status-text">Listo · Ctrl+Space</span>
+        <span class="status-dot" id="status-dot"></span>
+        <span class="status-text" id="status-text">Listo</span>
+        <div class="actions" style="--wails-draggable:no-drag">
+            <button class="btn-icon" id="btn-settings" title="Configuracion">&#9881;</button>
+            <button class="btn-icon btn-close" id="btn-close" title="Salir">&#10005;</button>
         </div>
     </div>
 
-    <!-- Vista de configuración -->
+    <!-- Vista de configuracion -->
     <div id="settings-view" class="view hidden">
         <div class="settings-form">
             <div class="field">
                 <label for="api-key">API Key de Gemini</label>
                 <div class="input-row">
                     <input type="password" id="api-key" placeholder="AIzaSy..." autocomplete="off" spellcheck="false"/>
-                    <button class="btn-icon" id="btn-toggle-key" title="Mostrar/ocultar">👁</button>
+                    <button class="btn-icon" id="btn-toggle-key" title="Mostrar/ocultar">&#128065;</button>
                 </div>
             </div>
             <div class="field">
@@ -57,4 +50,3 @@
 <script src="./src/main.js" type="module"></script>
 </body>
 </html>
-
