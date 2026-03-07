@@ -1,0 +1,27 @@
+# Wails build output
+build/bin
+
+# Frontend
+node_modules
+frontend/node_modules
+frontend/dist
+
+# Binarios compilados localmente
+*.exe
+
+# Archivos generados por Wails (se regeneran con `wails dev`)
+frontend/wailsjs/
+
+# Archivos de configuración local (contiene API key)
+# Si quieres ver el config de ejemplo: config.example.json
+AppData/
+config.json
+
+# Caché de Go
+*.test
+
+# VS Code
+.vscode/
+
+# JetBrains
+.idea/

@@ -1,0 +1,258 @@
+﻿* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+    color: #ffffff;
+    user-select: none;
+}
+
+#app {
+    width: 100%;
+    height: 100%;
+    background: #121212;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.12);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ── Titlebar ─────────────────────────────────── */
+.titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px;
+    height: 30px;
+    background: rgba(255,255,255,0.04);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    cursor: default;
+}
+
+.app-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.7);
+    letter-spacing: 0.5px;
+}
+
+.controls {
+    display: flex;
+    gap: 4px;
+    cursor: default;
+}
+
+.btn-icon {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.5);
+    cursor: pointer;
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1;
+    transition: background 0.15s, color 0.15s;
+}
+.btn-icon:hover {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+}
+.btn-close:hover {
+    background: #e53935 !important;
+    color: #fff !important;
+}
+
+/* ── Views ────────────────────────────────────── */
+.view {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* ── Main view ────────────────────────────────── */
+#main-view {
+    gap: 14px;
+    justify-content: center;
+}
+
+.mic-btn {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.06);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, border-color 0.2s, transform 0.1s;
+    flex-shrink: 0;
+}
+.mic-btn:hover {
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.3);
+}
+.mic-btn:active {
+    transform: scale(0.93);
+}
+.mic-btn.recording {
+    background: rgba(229, 57, 35, 0.25);
+    border-color: #e53935;
+    animation: pulse-ring 1.2s infinite;
+}
+.mic-btn.transcribing {
+    background: rgba(25, 118, 210, 0.2);
+    border-color: #1976d2;
+}
+.mic-btn.done {
+    background: rgba(46, 125, 50, 0.2);
+    border-color: #2e7d32;
+}
+
+.mic-icon {
+    width: 22px;
+    height: 22px;
+    color: rgba(255,255,255,0.75);
+    transition: color 0.2s;
+}
+.mic-btn.recording .mic-icon { color: #ef9a9a; }
+.mic-btn.transcribing .mic-icon { color: #90caf9; }
+.mic-btn.done .mic-icon { color: #a5d6a7; }
+
+@keyframes pulse-ring {
+    0%   { box-shadow: 0 0 0 0 rgba(229,57,35,0.45); }
+    70%  { box-shadow: 0 0 0 8px rgba(229,57,35,0); }
+    100% { box-shadow: 0 0 0 0 rgba(229,57,35,0); }
+}
+
+.status-area {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+}
+
+.status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    flex-shrink: 0;
+    transition: background 0.2s;
+}
+.status-dot.recording { background: #e53935; animation: blink 0.8s infinite; }
+.status-dot.transcribing { background: #1976d2; }
+.status-dot.done { background: #2e7d32; }
+.status-dot.error { background: #f57f17; }
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
+}
+
+.status-text {
+    font-size: 12px;
+    color: rgba(255,255,255,0.55);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── Settings view ────────────────────────────── */
+#settings-view {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 12px 14px 14px;
+    gap: 10px;
+}
+
+.settings-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.field label {
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.5);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.input-row {
+    display: flex;
+    gap: 4px;
+}
+
+input[type="text"],
+input[type="password"],
+select {
+    width: 100%;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 6px;
+    color: #fff;
+    padding: 5px 9px;
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.15s;
+    font-family: inherit;
+}
+input:focus, select:focus {
+    border-color: rgba(255,255,255,0.3);
+}
+select option {
+    background: #1e1e1e;
+}
+
+.btn-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+.btn-primary, .btn-secondary {
+    flex: 1;
+    padding: 6px 0;
+    border-radius: 6px;
+    border: none;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+.btn-primary {
+    background: #1976d2;
+    color: #fff;
+}
+.btn-primary:hover { opacity: 0.85; }
+
+.btn-secondary {
+    background: rgba(255,255,255,0.07);
+    color: rgba(255,255,255,0.7);
+    border: 1px solid rgba(255,255,255,0.12);
+}
+.btn-secondary:hover { background: rgba(255,255,255,0.12); }
+
