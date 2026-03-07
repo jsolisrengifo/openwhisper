@@ -1,19 +1,81 @@
-# README
+# OpenWhisper
 
-## About
+A lightweight, always-on-top floating dictation app for Windows. Press **Ctrl+Space** (or click the mic button) to record your voice, and OpenWhisper will transcribe it using the **Gemini API** and automatically paste the result wherever your cursor is.
 
-This is the official Wails Vanilla template.
+Built with [Go](https://go.dev/) + [Wails v2](https://wails.io/)
 
-You can configure the project by editing `wails.json`. More information about the project settings can be found
-here: https://wails.io/docs/reference/project-config
+---
 
-## Live Development
+## Features
 
-To run in live development mode, run `wails dev` in the project directory. This will run a Vite development
-server that will provide very fast hot reload of your frontend changes. If you want to develop in a browser
-and have access to your Go methods, there is also a dev server that runs on http://localhost:34115. Connect
-to this in your browser, and you can call your Go code from devtools.
+- **Global hotkey**  `Ctrl+Space` starts/stops recording from any app
+- **Auto-paste**  transcribed text is pasted directly at your cursor position
+- **Always on top**  frameless floating window, stays visible over other apps
+- **Gemini-powered**  uses Google Gemini API for high-quality transcription
+- **Minimal UI**  compact window, dark theme, no distractions
+- **Persistent settings**  API key and model stored locally in AppData
 
-## Building
+---
 
-To build a redistributable, production mode package, use `wails build`.
+## Requirements
+
+- Windows 10/11
+- [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (pre-installed on Windows 11)
+- A [Google Gemini API key](https://aistudio.google.com/app/apikey)
+
+---
+
+## Getting Started
+
+### Run in development mode
+
+```bash
+wails dev
+```
+
+### Build a production binary
+
+```bash
+wails build
+```
+
+The compiled `.exe` will be placed in `build/bin/`.
+
+---
+
+## Configuration
+
+On first run, click the settings button to and enter your Gemini API key. The default model is `gemini-2.0-flash`, but you can enter any compatible Gemini model name.
+
+Settings are saved to:
+```
+%APPDATA%\openwhisper\config.json
+```
+
+---
+
+## Development Prerequisites
+
+- [Go 1.21+](https://go.dev/dl/)
+- [Wails CLI v2](https://wails.io/docs/gettingstarted/installation): `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
+- Node.js (for frontend tooling, managed by Wails)
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Desktop framework | [Wails v2](https://wails.io/) |
+| Backend | Go |
+| Frontend | Vanilla JS + Vite |
+| Renderer | WebView2 (Chromium) |
+| Transcription | Google Gemini API |
+| Global hotkey | Windows `RegisterHotKey` API |
+| Auto-paste | Windows `keybd_event` API |
+
+---
+
+## License
+
+MIT
