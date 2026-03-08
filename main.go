@@ -4,6 +4,7 @@ import (
 	"embed"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 //go:embed all:frontend/dist
@@ -65,6 +66,12 @@ func main() {
 		Windows: application.WindowsWindow{
 			DisableIcon: true,
 		},
+	})
+	// Intercept the close button (X / Alt+F4): hide instead of destroy,
+	// so the window can be re-shown later.
+	settingsWindow.RegisterHook(events.Windows.WindowClosing, func(e *application.WindowEvent) {
+		e.Cancel()
+		settingsWindow.Hide()
 	})
 	appStruct.settingsWindow = settingsWindow
 

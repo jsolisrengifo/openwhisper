@@ -26,29 +26,7 @@
     </style>
 </head>
 <body>
-<div id="settings-root">
-    <h2>&#9881; Configuración</h2>
-
-    <div class="field">
-        <label for="api-key">API Key (Gemini)</label>
-        <div class="input-row">
-            <input type="password" id="api-key" placeholder="Pega tu API key aquí" autocomplete="off"/>
-            <button class="btn-icon" id="btn-toggle-key" title="Mostrar/ocultar">&#128065;</button>
-        </div>
-    </div>
-
-    <div class="field">
-        <label for="model-input">Modelo</label>
-        <input type="text" id="model-input" placeholder="gemini-2.0-flash"/>
-    </div>
-
-    <div class="btn-row">
-        <button class="btn-primary" id="btn-save">Guardar</button>
-        <button class="btn-secondary" id="btn-cancel">Cancelar</button>
-    </div>
-
-    <p id="status-msg" style="font-size:12px; color: rgba(255,255,255,0.45); min-height:16px;"></p>
-</div>
+<div id="settings-root"></div>
 <script type="module" src="./src/settings.js"></script>
 </body>
 </html>

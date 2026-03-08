@@ -70,6 +70,8 @@ func (a *App) HideWindow() {
 // ShowSettingsWindow opens the settings window
 func (a *App) ShowSettingsWindow() {
 	a.settingsWindow.Show()
+	a.settingsWindow.Focus()
+	a.app.Event.Emit("settings:show")
 }
 
 // HideSettingsWindow closes the settings window

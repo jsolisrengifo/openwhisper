@@ -101,7 +101,7 @@ wails3 generate bindings -d frontend/src/bindings -clean=true
 |-------|-----------|
 | Desktop framework | [Wails v3](https://v3.wails.io/) |
 | Backend | Go |
-| Frontend | Vanilla JS + Vite 5 |
+| Frontend | [Svelte 5](https://svelte.dev/) + Vite 5 |
 | Runtime bridge | [@wailsio/runtime](https://www.npmjs.com/package/@wailsio/runtime) |
 | Renderer | WebView2 (Chromium) |
 | Transcription | Google Gemini API |
