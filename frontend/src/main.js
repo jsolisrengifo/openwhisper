@@ -1,62 +1,96 @@
 import './style.css';
-import { TranscribeAudio, PasteText, GetSettings, SaveSettings, SetWindowSize } from '../wailsjs/go/main/App';
-import { EventsOn, Quit } from '../wailsjs/runtime/runtime';
+import { TranscribeAudio, PasteText, GetSettings, SaveSettings, SetWindowSize, HideWindow, GetWindowPosition, SetWindowPositionAndSize } from '../wailsjs/go/main/App';
+import { EventsOn } from '../wailsjs/runtime/runtime';
 
-// ── Estado de la aplicación ────────────────────────────────────────
-const MAIN_W = 240, MAIN_H = 46;
-const SETTINGS_W = 360, SETTINGS_H = 250;
+//  Dimensiones 
+const BAR_W = 240, BAR_H = 46;
+const PANEL_H = 270; // barra + panel abierto
 
+//  Estado 
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
 let stream = null;
+let panelOpen = false;
+let panelOpenedUpward = false;
 let isConfigured = false;
 
-// ── Referencias DOM ────────────────────────────────────────────────
-const micBtn      = document.getElementById('mic-btn');
-const statusText  = document.getElementById('status-text');
-const mainView    = document.getElementById('main-view');
-const settingsView = document.getElementById('settings-view');
-const btnSettings = document.getElementById('btn-settings');
-const btnClose    = document.getElementById('btn-close');
-const btnSave     = document.getElementById('btn-save');
-const btnCancel   = document.getElementById('btn-cancel');
-const apiKeyInput = document.getElementById('api-key');
-const modelInput  = document.getElementById('model-input');
-const btnToggleKey = document.getElementById('btn-toggle-key');
+//  Referencias DOM 
+const micBtn        = document.getElementById('mic-btn');
+const statusText    = document.getElementById('status-text');
+const btnSettings   = document.getElementById('btn-settings');
+const btnClose      = document.getElementById('btn-close');
+const btnSave       = document.getElementById('btn-save');
+const btnCancel     = document.getElementById('btn-cancel');
+const apiKeyInput   = document.getElementById('api-key');
+const modelInput    = document.getElementById('model-input');
+const btnToggleKey  = document.getElementById('btn-toggle-key');
+const settingsPanel = document.getElementById('settings-panel');
 
-// ── Helpers de UI ──────────────────────────────────────────────────
-function setState(state, message) {
-    const states = ['recording', 'transcribing', 'done', 'error'];
-    micBtn.classList.remove(...states);
+//  Panel toggle 
+async function openPanel() {
+    panelOpen = true;
+    settingsPanel.classList.add('open');
+    btnSettings.classList.add('active');
 
-    if (state) {
-        micBtn.classList.add(state);
+    const TASKBAR_H = 48; // espacio reservado para la taskbar
+    const pos = await GetWindowPosition();
+    const screenH = window.screen.height;
+    const spaceBelow = screenH - pos.y - BAR_H - TASKBAR_H;
+
+    if (spaceBelow < (PANEL_H - BAR_H)) {
+        // No hay espacio abajo: mover ventana hacia arriba
+        panelOpenedUpward = true;
+        SetWindowPositionAndSize(pos.x, pos.y - (PANEL_H - BAR_H), BAR_W, PANEL_H);
+    } else {
+        panelOpenedUpward = false;
+        SetWindowSize(BAR_W, PANEL_H);
     }
-    statusText.textContent = message || 'Listo';
-}
 
-function showMainView() {
-    settingsView.classList.add('hidden');
-    mainView.classList.remove('hidden');
-    SetWindowSize(MAIN_W, MAIN_H);
-}
-
-function showSettingsView() {
-    mainView.classList.add('hidden');
-    settingsView.classList.remove('hidden');
-    SetWindowSize(SETTINGS_W, SETTINGS_H);
-
-    // Cargar configuración actual
     GetSettings().then(s => {
         apiKeyInput.value = s.api_key || '';
-        modelInput.value  = s.model || '';
+        modelInput.value  = s.model  || '';
     }).catch(() => {});
 }
 
-// ── Grabación de audio ─────────────────────────────────────────────
+async function closePanel() {
+    panelOpen = false;
+    settingsPanel.classList.remove('open');
+    btnSettings.classList.remove('active');
+
+    if (panelOpenedUpward) {
+        // Restaurar posición original (bajar la ventana de vuelta)
+        const pos = await GetWindowPosition();
+        SetWindowPositionAndSize(pos.x, pos.y + (PANEL_H - BAR_H), BAR_W, BAR_H);
+        panelOpenedUpward = false;
+    } else {
+        SetWindowSize(BAR_W, BAR_H);
+    }
+}
+
+function togglePanel() {
+    if (panelOpen) { closePanel(); } else { openPanel(); }
+}
+
+//  Estado visual 
+function setState(state, message) {
+    const states = ['recording', 'transcribing', 'done', 'error'];
+    micBtn.classList.remove(...states);
+    if (state) micBtn.classList.add(state);
+    statusText.textContent = message || 'Listo';
+    statusText.classList.toggle('warn', false);
+}
+
+function setUnconfigured() {
+    statusText.textContent = '\u2699 Config. pendiente';
+    statusText.classList.add('warn');
+}
+
+//  Grabación de audio 
 async function startRecording() {
     if (isRecording) return;
+
+    if (!isConfigured) { openPanel(); return; }
 
     try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -67,7 +101,6 @@ async function startRecording() {
     }
 
     audioChunks = [];
-    // Intentar webm/opus primero; fallback a audio/webm
     const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
         : 'audio/webm';
@@ -77,25 +110,20 @@ async function startRecording() {
         if (e.data && e.data.size > 0) audioChunks.push(e.data);
     };
     mediaRecorder.onstop = handleRecordingStop;
-
     mediaRecorder.start();
     isRecording = true;
-    setState('recording', 'Grabando…');
+    setState('recording', 'Grabando');
 }
 
 function stopRecording() {
     if (!isRecording || !mediaRecorder) return;
     mediaRecorder.stop();
     isRecording = false;
-    if (stream) {
-        stream.getTracks().forEach(t => t.stop());
-        stream = null;
-    }
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
 }
 
 async function handleRecordingStop() {
-    setState('transcribing', 'Transcribiendo…');
-
+    setState('transcribing', 'Transcribiendo');
     const blob = new Blob(audioChunks, { type: 'audio/webm' });
     const mimeType = blob.type || 'audio/webm';
 
@@ -109,14 +137,12 @@ async function handleRecordingStop() {
             return;
         }
 
-        // Pegar el texto donde esté el cursor
         await PasteText(text.trim());
-
         setState('done', '¡Pegado!');
         setTimeout(() => setState(null), 2000);
     } catch (err) {
         const msg = (err && err.message) ? err.message : String(err);
-        setState('error', msg.length > 30 ? msg.substring(0, 30) + '…' : msg);
+        setState('error', msg.length > 30 ? msg.substring(0, 30) + '' : msg);
         setTimeout(() => setState(null), 5000);
     }
 }
@@ -124,38 +150,26 @@ async function handleRecordingStop() {
 function blobToBase64(blob) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onloadend = () => {
-            // reader.result = "data:audio/webm;base64,AAAA..."
-            const base64 = reader.result.split(',')[1];
-            resolve(base64);
-        };
+        reader.onloadend = () => resolve(reader.result.split(',')[1]);
         reader.onerror = reject;
         reader.readAsDataURL(blob);
     });
 }
 
 function toggleRecording() {
-    if (!settingsView.classList.contains('hidden')) return;
-    if (!isConfigured) { showSettingsView(); return; }
-    if (isRecording) {
-        stopRecording();
-    } else {
-        startRecording();
-    }
+    if (isRecording) { stopRecording(); } else { startRecording(); }
 }
 
-// ── Event listeners ────────────────────────────────────────────────
+//  Event listeners 
 micBtn.addEventListener('click', toggleRecording);
-
-btnSettings.addEventListener('click', showSettingsView);
+btnSettings.addEventListener('click', togglePanel);
 
 btnClose.addEventListener('click', () => {
-    // Detener grabación si está activa antes de salir
     if (isRecording) stopRecording();
-    Quit();
+    HideWindow();
 });
 
-btnCancel.addEventListener('click', showMainView);
+btnCancel.addEventListener('click', closePanel);
 
 btnToggleKey.addEventListener('click', () => {
     apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
@@ -164,7 +178,7 @@ btnToggleKey.addEventListener('click', () => {
 btnSave.addEventListener('click', async () => {
     const settings = {
         api_key: apiKeyInput.value.trim(),
-        model: modelInput.value.trim(),
+        model:   modelInput.value.trim(),
     };
 
     if (!settings.api_key) {
@@ -181,39 +195,22 @@ btnSave.addEventListener('click', async () => {
     try {
         await SaveSettings(settings);
         isConfigured = true;
-        statusText.classList.remove('warn');
-        showMainView();
+        closePanel();
+        setState(null);
     } catch (err) {
         alert('Error guardando configuración: ' + err);
     }
 });
 
-// Escuchar evento del hotkey global (Ctrl+Space emitido desde Go)
+//  Hotkey global 
 EventsOn('toggle-recording', toggleRecording);
+EventsOn('open-settings', openPanel);
 
-// Verificar configuración al iniciar
+//  Init: verificar configuración 
 GetSettings().then(s => {
     isConfigured = !!(s.api_key && s.model);
-    if (!isConfigured) {
-        statusText.textContent = '⚙ Config. pendiente';
-        statusText.classList.add('warn');
-    }
+    if (!isConfigured) setUnconfigured();
 }).catch(() => {
     isConfigured = false;
-    statusText.textContent = '⚙ Config. pendiente';
-    statusText.classList.add('warn');
+    setUnconfigured();
 });
-
-// Escuchar evento para abrir settings (cuando no hay API key)
-EventsOn('open-settings', showSettingsView);
-
-// ── Inicialización ─────────────────────────────────────────────────
-GetSettings().then(s => {
-    if (!s.api_key) {
-        // Primera ejecución: mostrar configuración
-        showSettingsView();
-    }
-}).catch(() => {
-    showSettingsView();
-});
-

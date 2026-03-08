@@ -4,9 +4,15 @@ import {main} from '../models';
 
 export function GetSettings():Promise<main.Settings>;
 
+export function GetWindowPosition():Promise<main.WindowPos>;
+
+export function HideWindow():Promise<void>;
+
 export function PasteText(arg1:string):Promise<void>;
 
 export function SaveSettings(arg1:main.Settings):Promise<void>;
+
+export function SetWindowPositionAndSize(arg1:number,arg2:number,arg3:number,arg4:number):Promise<void>;
 
 export function SetWindowSize(arg1:number,arg2:number):Promise<void>;
 

@@ -6,12 +6,24 @@ export function GetSettings() {
   return window['go']['main']['App']['GetSettings']();
 }
 
+export function GetWindowPosition() {
+  return window['go']['main']['App']['GetWindowPosition']();
+}
+
+export function HideWindow() {
+  return window['go']['main']['App']['HideWindow']();
+}
+
 export function PasteText(arg1) {
   return window['go']['main']['App']['PasteText'](arg1);
 }
 
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
+}
+
+export function SetWindowPositionAndSize(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SetWindowPositionAndSize'](arg1, arg2, arg3, arg4);
 }
 
 export function SetWindowSize(arg1, arg2) {

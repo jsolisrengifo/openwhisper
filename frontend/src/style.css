@@ -1,4 +1,4 @@
-﻿* {
+* {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
@@ -26,14 +26,17 @@ html, body {
     overflow: hidden;
 }
 
-/* ── Actions (botones derecha) ───────────────── */
-.actions {
+/*  Barra compacta (siempre visible)  */
+.bar {
+    height: 46px;
     display: flex;
-    gap: 2px;
-    margin-left: auto;
+    align-items: center;
+    gap: 8px;
+    padding: 0 8px;
     flex-shrink: 0;
 }
 
+/*  Botones de icono  */
 .btn-icon {
     background: none;
     border: none;
@@ -49,29 +52,16 @@ html, body {
     background: rgba(255,255,255,0.1);
     color: #fff;
 }
-.btn-close:hover {
-    background: #e53935 !important;
-    color: #fff !important;
+.btn-settings-toggle.active {
+    color: #fff;
+    background: rgba(255,255,255,0.12);
+}
+.btn-hide:hover {
+    background: rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.8);
 }
 
-/* ── Views ────────────────────────────────────── */
-.view {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    padding: 0 8px;
-}
-
-.hidden {
-    display: none !important;
-}
-
-/* ── Main view ────────────────────────────────── */
-#main-view {
-    gap: 8px;
-    padding: 0 8px;
-}
-
+/*  Botón micrófono  */
 .mic-btn {
     background: none;
     border: none;
@@ -110,8 +100,7 @@ html, body {
     50%       { color: #ef9a9a; }
 }
 
-
-
+/*  Texto de estado  */
 .status-text {
     font-size: 12px;
     color: rgba(255,255,255,0.55);
@@ -125,21 +114,32 @@ html, body {
     color: #ffb74d;
 }
 
-/* ── Settings view ────────────────────────────── */
-#settings-view {
-    flex-direction: column;
-    align-items: stretch;
-    padding: 12px 14px 14px;
-    gap: 10px;
+/*  Acciones (botones derecha)  */
+.actions {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+    flex-shrink: 0;
 }
 
-.settings-form {
+/*  Panel de configuración  */
+.panel {
+    max-height: 0;
+    overflow: hidden;
+}
+.panel.open {
+    max-height: 240px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.panel-inner {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    width: 100%;
+    padding: 12px 12px 14px;
 }
 
+/*  Campos de formulario  */
 .field {
     display: flex;
     flex-direction: column;
@@ -160,8 +160,7 @@ html, body {
 }
 
 input[type="text"],
-input[type="password"],
-select {
+input[type="password"] {
     width: 100%;
     background: rgba(255,255,255,0.07);
     border: 1px solid rgba(255,255,255,0.12);
@@ -173,11 +172,8 @@ select {
     transition: border-color 0.15s;
     font-family: inherit;
 }
-input:focus, select:focus {
+input:focus {
     border-color: rgba(255,255,255,0.3);
-}
-select option {
-    background: #1e1e1e;
 }
 
 .btn-row {
@@ -208,4 +204,3 @@ select option {
     border: 1px solid rgba(255,255,255,0.12);
 }
 .btn-secondary:hover { background: rgba(255,255,255,0.12); }
-

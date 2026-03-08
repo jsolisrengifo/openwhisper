@@ -14,6 +14,20 @@ export namespace main {
 	        this.model = source["model"];
 	    }
 	}
+	export class WindowPos {
+	    x: number;
+	    y: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new WindowPos(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.x = source["x"];
+	        this.y = source["y"];
+	    }
+	}
 
 }
 
