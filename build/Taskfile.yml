@@ -1,0 +1,46 @@
+version: '3'
+
+vars:
+  APP_NAME: '{{.APP_NAME | default "OpenWhisper"}}'
+  BIN_DIR: '{{.BIN_DIR | default "build/bin"}}'
+  VITE_PORT: '{{.VITE_PORT | default "9245"}}'
+
+tasks:
+  install:frontend:deps:
+    summary: Install frontend dependencies
+    dir: frontend
+    sources:
+      - package.json
+      - package-lock.json
+    generates:
+      - node_modules/.package-lock.json
+    cmds:
+      - npm install
+
+  build:frontend:
+    summary: Build the frontend (dev build, no minification)
+    dir: frontend
+    deps:
+      - task: install:frontend:deps
+    cmds:
+      - npm run build:dev
+
+  dev:frontend:
+    summary: Run the frontend Vite dev server
+    dir: frontend
+    deps:
+      - task: install:frontend:deps
+    cmds:
+      - npm run dev -- --port {{.VITE_PORT}} --strictPort
+
+  build:
+    summary: Build the Go binary (includes frontend build)
+    deps:
+      - task: build:frontend
+    cmds:
+      - go build -buildvcs=false -o {{.BIN_DIR}}/{{.APP_NAME}}.exe .
+
+  run:
+    summary: Run the built binary
+    cmds:
+      - ./{{.BIN_DIR}}/{{.APP_NAME}}.exe

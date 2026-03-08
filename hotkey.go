@@ -1,12 +1,11 @@
 package main
 
 import (
-	"context"
 	goruntime "runtime"
 	"time"
 	"unsafe"
 
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/sys/windows"
 )
 
@@ -31,15 +30,15 @@ type MSG struct {
 
 // HotkeyManager handles global hotkey registration and listening
 type HotkeyManager struct {
-	ctx    context.Context
+	app    *application.App
 	quit   chan struct{}
 	user32 *windows.LazyDLL
 }
 
 // NewHotkeyManager creates a new hotkey manager
-func NewHotkeyManager(ctx context.Context) *HotkeyManager {
+func NewHotkeyManager(app *application.App) *HotkeyManager {
 	return &HotkeyManager{
-		ctx:    ctx,
+		app:    app,
 		quit:   make(chan struct{}),
 		user32: windows.NewLazySystemDLL("user32.dll"),
 	}
@@ -85,7 +84,7 @@ func (h *HotkeyManager) Start() {
 		)
 
 		if ret != 0 && msg.Message == wmHotkey && msg.WParam == hotkeyID {
-			runtime.EventsEmit(h.ctx, "toggle-recording")
+			h.app.Event.Emit("toggle-recording")
 		}
 
 		time.Sleep(30 * time.Millisecond)

@@ -1,78 +1,21 @@
-import './style.css';
-import { TranscribeAudio, PasteText, GetSettings, SaveSettings, SetWindowSize, HideWindow, GetWindowPosition, SetWindowPositionAndSize } from '../wailsjs/go/main/App';
-import { EventsOn } from '../wailsjs/runtime/runtime';
+﻿import './style.css';
+import { TranscribeAudio, PasteText, ShowSettingsWindow, HideWindow, GetSettings } from './bindings/openwhisper/app.js';
+import { Events } from '@wailsio/runtime';
 
-//  Dimensiones 
-const BAR_W = 240, BAR_H = 46;
-const PANEL_H = 270; // barra + panel abierto
-
-//  Estado 
+//  Estado
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
 let stream = null;
-let panelOpen = false;
-let panelOpenedUpward = false;
 let isConfigured = false;
 
-//  Referencias DOM 
-const micBtn        = document.getElementById('mic-btn');
-const statusText    = document.getElementById('status-text');
-const btnSettings   = document.getElementById('btn-settings');
-const btnClose      = document.getElementById('btn-close');
-const btnSave       = document.getElementById('btn-save');
-const btnCancel     = document.getElementById('btn-cancel');
-const apiKeyInput   = document.getElementById('api-key');
-const modelInput    = document.getElementById('model-input');
-const btnToggleKey  = document.getElementById('btn-toggle-key');
-const settingsPanel = document.getElementById('settings-panel');
+//  Referencias DOM
+const micBtn      = document.getElementById('mic-btn');
+const statusText  = document.getElementById('status-text');
+const btnSettings = document.getElementById('btn-settings');
+const btnClose    = document.getElementById('btn-close');
 
-//  Panel toggle 
-async function openPanel() {
-    panelOpen = true;
-    settingsPanel.classList.add('open');
-    btnSettings.classList.add('active');
-
-    const TASKBAR_H = 48; // espacio reservado para la taskbar
-    const pos = await GetWindowPosition();
-    const screenH = window.screen.height;
-    const spaceBelow = screenH - pos.y - BAR_H - TASKBAR_H;
-
-    if (spaceBelow < (PANEL_H - BAR_H)) {
-        // No hay espacio abajo: mover ventana hacia arriba
-        panelOpenedUpward = true;
-        SetWindowPositionAndSize(pos.x, pos.y - (PANEL_H - BAR_H), BAR_W, PANEL_H);
-    } else {
-        panelOpenedUpward = false;
-        SetWindowSize(BAR_W, PANEL_H);
-    }
-
-    GetSettings().then(s => {
-        apiKeyInput.value = s.api_key || '';
-        modelInput.value  = s.model  || '';
-    }).catch(() => {});
-}
-
-async function closePanel() {
-    panelOpen = false;
-    settingsPanel.classList.remove('open');
-    btnSettings.classList.remove('active');
-
-    if (panelOpenedUpward) {
-        // Restaurar posición original (bajar la ventana de vuelta)
-        const pos = await GetWindowPosition();
-        SetWindowPositionAndSize(pos.x, pos.y + (PANEL_H - BAR_H), BAR_W, BAR_H);
-        panelOpenedUpward = false;
-    } else {
-        SetWindowSize(BAR_W, BAR_H);
-    }
-}
-
-function togglePanel() {
-    if (panelOpen) { closePanel(); } else { openPanel(); }
-}
-
-//  Estado visual 
+//  Estado visual
 function setState(state, message) {
     const states = ['recording', 'transcribing', 'done', 'error'];
     micBtn.classList.remove(...states);
@@ -86,11 +29,11 @@ function setUnconfigured() {
     statusText.classList.add('warn');
 }
 
-//  Grabación de audio 
+//  Grabación de audio
 async function startRecording() {
     if (isRecording) return;
 
-    if (!isConfigured) { openPanel(); return; }
+    if (!isConfigured) { ShowSettingsWindow(); return; }
 
     try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -138,11 +81,11 @@ async function handleRecordingStop() {
         }
 
         await PasteText(text.trim());
-        setState('done', '¡Pegado!');
+        setState('done', '\u00a1Pegado!');
         setTimeout(() => setState(null), 2000);
     } catch (err) {
         const msg = (err && err.message) ? err.message : String(err);
-        setState('error', msg.length > 30 ? msg.substring(0, 30) + '' : msg);
+        setState('error', msg.length > 30 ? msg.substring(0, 30) + '\u2026' : msg);
         setTimeout(() => setState(null), 5000);
     }
 }
@@ -160,53 +103,20 @@ function toggleRecording() {
     if (isRecording) { stopRecording(); } else { startRecording(); }
 }
 
-//  Event listeners 
+//  Event listeners
 micBtn.addEventListener('click', toggleRecording);
-btnSettings.addEventListener('click', togglePanel);
-
+btnSettings.addEventListener('click', () => ShowSettingsWindow());
 btnClose.addEventListener('click', () => {
     if (isRecording) stopRecording();
     HideWindow();
 });
 
-btnCancel.addEventListener('click', closePanel);
+//  Eventos desde el backend Go
+Events.On('toggle-recording', toggleRecording);
+Events.On('open-settings', () => ShowSettingsWindow());
 
-btnToggleKey.addEventListener('click', () => {
-    apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
-});
+//  Init: comprobar si la API key está configurada
 
-btnSave.addEventListener('click', async () => {
-    const settings = {
-        api_key: apiKeyInput.value.trim(),
-        model:   modelInput.value.trim(),
-    };
-
-    if (!settings.api_key) {
-        apiKeyInput.style.borderColor = '#e53935';
-        setTimeout(() => { apiKeyInput.style.borderColor = ''; }, 2000);
-        return;
-    }
-    if (!settings.model) {
-        modelInput.style.borderColor = '#e53935';
-        setTimeout(() => { modelInput.style.borderColor = ''; }, 2000);
-        return;
-    }
-
-    try {
-        await SaveSettings(settings);
-        isConfigured = true;
-        closePanel();
-        setState(null);
-    } catch (err) {
-        alert('Error guardando configuración: ' + err);
-    }
-});
-
-//  Hotkey global 
-EventsOn('toggle-recording', toggleRecording);
-EventsOn('open-settings', openPanel);
-
-//  Init: verificar configuración 
 GetSettings().then(s => {
     isConfigured = !!(s.api_key && s.model);
     if (!isConfigured) setUnconfigured();

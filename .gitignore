@@ -1,10 +1,12 @@
 # Wails build output
-build/bin
+build/bin/
 
-# Frontend
-node_modules
-frontend/node_modules
-frontend/dist
+# Frontend build output
+frontend/dist/
+
+# Dependencias de Node
+node_modules/
+frontend/node_modules/
 
 # Binarios compilados localmente
 *.exe
@@ -14,6 +16,13 @@ config.json
 
 # Caché de Go
 *.test
+*.out
+
+# Wails dev temp files
+**/.wails-dev-*
+
+# Task runner cache
+.task/
 
 # VS Code
 .vscode/

@@ -1,0 +1,39 @@
+# Configuración del proyecto OpenWhisper para Wails v3
+version: '3'
+
+info:
+  productName: "OpenWhisper"
+  productIdentifier: "com.openwhisper.app"
+  version: "0.0.1"
+  description: "Transcripción de audio por voz usando Gemini"
+  copyright: "(c) 2025, OpenWhisper"
+
+# Configuración del modo desarrollo
+dev_mode:
+  root_path: .
+  log_level: warn
+  debounce: 1000
+  ignore:
+    dir:
+      - .git
+      - node_modules
+      - frontend
+      - build/bin
+    file:
+      - .DS_Store
+      - .gitignore
+      - .gitkeep
+    watched_extension:
+      - "*.go"
+    git_ignore: true
+  executes:
+    - cmd: wails3 task common:install:frontend:deps
+      type: once
+    - cmd: wails3 task common:dev:frontend
+      type: background
+    - cmd: go mod tidy
+      type: blocking
+    - cmd: wails3 task common:build
+      type: blocking
+    - cmd: wails3 task common:run
+      type: primary
