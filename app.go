@@ -65,6 +65,8 @@ func (a *App) SaveSettings(s Settings) error {
 		}
 	}
 	a.settings = &s
+	// Notify all windows that settings have been updated
+	a.app.Event.Emit("settings:saved")
 	return nil
 }
 

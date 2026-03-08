@@ -1,6 +1,6 @@
 # OpenWhisper
 
-A lightweight, always-on-top floating dictation app for Windows. Press **Ctrl+Space** (or click the mic button) to record your voice, and OpenWhisper will transcribe it using the **Gemini API** and automatically paste the result wherever your cursor is.
+A lightweight, always-on-top floating dictation app. Press **Ctrl+Space** (or click the mic button) to record your voice, and OpenWhisper will transcribe it using the **Gemini API** and automatically paste the result wherever your cursor is.
 
 Built with [Go](https://go.dev/) + [Wails v3](https://v3.wails.io/)
 
@@ -13,14 +13,15 @@ Built with [Go](https://go.dev/) + [Wails v3](https://v3.wails.io/)
 - **Always on top**  frameless floating window, stays visible over other apps
 - **Gemini-powered**  uses Google Gemini API for high-quality transcription
 - **Minimal UI**  compact window, dark theme, no distractions
-- **Persistent settings**  API key and model stored locally in AppData
+- **Secure credential storage**  API key stored in the OS native keyring, never in plain text
+- **Live configuration refresh**  the widget updates instantly when settings are saved
 
 ---
 
 ## Requirements
 
-- Windows 10/11
-- [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (pre-installed on Windows 11)
+- Windows 10/11 (macOS and Linux also supported)
+- [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (pre-installed on Windows 11; Windows only)
 - A [Google Gemini API key](https://aistudio.google.com/app/apikey)
 
 ---
@@ -62,10 +63,16 @@ Click the **⚙** button to open settings and fill in:
 
 Both fields are required. The app has no hardcoded defaults — you choose the model.
 
-Settings are saved to:
-```
-%APPDATA%\openwhisper\config.json
-```
+Settings are auto-saved 600 ms after the last keystroke. The floating widget refreshes immediately — the "⚙ Config. pendiente" indicator disappears as soon as a valid API key and model are saved, with no need to restart the app.
+
+### Storage locations
+
+| Data | Location |
+|------|----------|
+| Model, hotkey | `%APPDATA%\openwhisper\config.json` (Windows) / `~/.config/openwhisper/config.json` (Linux) / `~/Library/Application Support/openwhisper/config.json` (macOS) |
+| **API Key** | **OS native keyring** — Windows Credential Manager / macOS Keychain / Linux Secret Service |
+
+> **Security note:** The API key is never written to `config.json`. It is stored exclusively in the operating system's secure credential store, isolated from the file system and inaccessible to other user processes without explicit authorization.
 
 ---
 
@@ -75,6 +82,7 @@ Settings are saved to:
 - [Wails CLI v3](https://v3.wails.io/): `go install github.com/wailsapp/wails/v3/cmd/wails3@latest`
 - [Task](https://taskfile.dev/) (task runner): `go install github.com/go-task/task/v3/cmd/task@latest`
 - Node.js 18+ (for frontend tooling)
+- **Linux only:** a running `gnome-keyring` or compatible Secret Service daemon
 
 ### Install frontend dependencies
 
@@ -105,6 +113,7 @@ wails3 generate bindings -d frontend/src/bindings -clean=true
 | Runtime bridge | [@wailsio/runtime](https://www.npmjs.com/package/@wailsio/runtime) |
 | Renderer | WebView2 (Chromium) |
 | Transcription | Google Gemini API |
+| Credential storage | [go-keyring](https://github.com/zalando/go-keyring) (WCM / Keychain / Secret Service) |
 | Global hotkey | Windows `RegisterHotKey` API |
 | Auto-paste | Windows `keybd_event` API |
 | Task runner | [Task](https://taskfile.dev/) |

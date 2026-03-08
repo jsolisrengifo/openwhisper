@@ -149,6 +149,13 @@
 
     Events.On('toggle-recording', toggleRecording);
     Events.On('open-settings', () => ShowSettingsWindow());
+    Events.On('settings:saved', () => {
+      GetSettings().then(s => {
+        isConfigured = !!(s.api_key && s.model);
+        if (isConfigured) { setState(null, 'Listo'); } else { setUnconfigured(); }
+        if (s.hotkey && s.hotkey.display) hotkeyDisplay = s.hotkey.display;
+      }).catch(() => {});
+    });
   });
 </script>
 

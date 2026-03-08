@@ -2,8 +2,16 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+
+	"github.com/zalando/go-keyring"
+)
+
+const (
+	keyringSvc  = "openwhisper"
+	keyringUser = "gemini_api_key"
 )
 
 // HotkeyConfig stores a global keyboard shortcut definition.
@@ -13,9 +21,17 @@ type HotkeyConfig struct {
 	Display   string `json:"display"`   // Human-readable label, e.g. "Ctrl+Space"
 }
 
-// Settings holds the app configuration
+// Settings holds the app configuration.
+// APIKey is NOT persisted in the JSON file; it lives in the OS keyring.
 type Settings struct {
-	APIKey string       `json:"api_key"`
+	APIKey string       `json:"api_key,omitempty"` // Only in memory / transmitted to UI; never written to disk
+	Model  string       `json:"model"`
+	Hotkey HotkeyConfig `json:"hotkey"`
+}
+
+// diskSettings is the representation written to config.json.
+// The API key is intentionally absent.
+type diskSettings struct {
 	Model  string       `json:"model"`
 	Hotkey HotkeyConfig `json:"hotkey"`
 }
@@ -40,7 +56,34 @@ func settingsPath() (string, error) {
 	return filepath.Join(configDir, "openwhisper", "config.json"), nil
 }
 
-// LoadSettings reads settings from disk. Returns DefaultSettings on any error.
+// saveAPIKey stores the API key in the OS keyring.
+// If key is empty the existing entry is deleted (best-effort).
+func saveAPIKey(key string) error {
+	if key == "" {
+		err := keyring.Delete(keyringSvc, keyringUser)
+		if err != nil && !errors.Is(err, keyring.ErrNotFound) {
+			return err
+		}
+		return nil
+	}
+	return keyring.Set(keyringSvc, keyringUser, key)
+}
+
+// loadAPIKey retrieves the API key from the OS keyring.
+// Returns ("", nil) when no key has been stored yet.
+func loadAPIKey() (string, error) {
+	val, err := keyring.Get(keyringSvc, keyringUser)
+	if err != nil {
+		if errors.Is(err, keyring.ErrNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	return val, nil
+}
+
+// LoadSettings reads settings from disk and loads the API key from the OS keyring.
+// Returns DefaultSettings when the config file does not yet exist (first run).
 func LoadSettings() (*Settings, error) {
 	path, err := settingsPath()
 	if err != nil {
@@ -49,19 +92,38 @@ func LoadSettings() (*Settings, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			def := DefaultSettings()
+			return &def, nil
+		}
 		return nil, err
 	}
 
-	var s Settings
-	if err := json.Unmarshal(data, &s); err != nil {
+	var d diskSettings
+	if err := json.Unmarshal(data, &d); err != nil {
 		return nil, err
 	}
+
+	s := Settings{
+		Model:  d.Model,
+		Hotkey: d.Hotkey,
+	}
+
+	// Load the API key from the secure keyring (best-effort: empty on error)
+	s.APIKey, _ = loadAPIKey()
 
 	return &s, nil
 }
 
-// saveSettings writes settings to disk
+// saveSettings persists non-sensitive settings to disk and stores the API key
+// in the OS native keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service).
 func saveSettings(s Settings) error {
+	// 1. Persist the API key securely
+	if err := saveAPIKey(s.APIKey); err != nil {
+		return err
+	}
+
+	// 2. Write non-sensitive config to disk (APIKey deliberately excluded)
 	path, err := settingsPath()
 	if err != nil {
 		return err
@@ -71,7 +133,12 @@ func saveSettings(s Settings) error {
 		return err
 	}
 
-	data, err := json.MarshalIndent(s, "", "  ")
+	d := diskSettings{
+		Model:  s.Model,
+		Hotkey: s.Hotkey,
+	}
+
+	data, err := json.MarshalIndent(d, "", "  ")
 	if err != nil {
 		return err
 	}
