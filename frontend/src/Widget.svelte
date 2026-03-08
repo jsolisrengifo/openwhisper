@@ -9,11 +9,17 @@
   let isRecording = false;
   let stream = null;
 
+  // Waveform state
+  let analyser = null;
+  let waveformAnimId = null;
+  let waveformBars = $state([0.15, 0.15, 0.15, 0.15, 0.15]);
+
   // Reactive UI state
   let isConfigured = $state(false);
   let uiState = $state(null);
   let statusMessage = $state('Listo');
   let warnStatus = $state(false);
+  let hotkeyDisplay = $state('Ctrl+Space');
 
   function setState(state, message) {
     uiState = state;
@@ -24,6 +30,37 @@
   function setUnconfigured() {
     statusMessage = '\u2699 Config. pendiente';
     warnStatus = true;
+  }
+
+  // ── Waveform animation ───────────────────────────────────────────────────
+  function startWaveform(micStream) {
+    try {
+      const audioCtx = new AudioContext();
+      const source = audioCtx.createMediaStreamSource(micStream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 32;
+      source.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const BAR_COUNT = 5;
+
+      function draw() {
+        waveformAnimId = requestAnimationFrame(draw);
+        analyser.getByteFrequencyData(dataArray);
+        const slice = Math.floor(dataArray.length / BAR_COUNT);
+        waveformBars = Array.from({ length: BAR_COUNT }, (_, i) => {
+          const val = dataArray[i * slice] / 255;
+          return Math.max(0.08, val);
+        });
+      }
+      draw();
+    } catch (_) {}
+  }
+
+  function stopWaveform() {
+    if (waveformAnimId) { cancelAnimationFrame(waveformAnimId); waveformAnimId = null; }
+    waveformBars = [0.15, 0.15, 0.15, 0.15, 0.15];
+    analyser = null;
   }
 
   async function startRecording() {
@@ -51,10 +88,12 @@
     mediaRecorder.start();
     isRecording = true;
     setState('recording', 'Grabando');
+    startWaveform(stream);
   }
 
   function stopRecording() {
     if (!isRecording || !mediaRecorder) return;
+    stopWaveform();
     mediaRecorder.stop();
     isRecording = false;
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
@@ -102,6 +141,7 @@
     GetSettings().then(s => {
       isConfigured = !!(s.api_key && s.model);
       if (!isConfigured) setUnconfigured();
+      if (s.hotkey && s.hotkey.display) hotkeyDisplay = s.hotkey.display;
     }).catch(() => {
       isConfigured = false;
       setUnconfigured();
@@ -119,14 +159,22 @@
     class:transcribing={uiState === 'transcribing'}
     class:done={uiState === 'done'}
     class:error={uiState === 'error'}
-    title="Grabar (Ctrl+Space)"
+    title="Grabar ({hotkeyDisplay})"
     style="--wails-draggable:no-drag"
     onclick={toggleRecording}
   >
-    <svg class="mic-icon" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-      <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-    </svg>
+    {#if uiState === 'recording'}
+      <span class="waveform" aria-hidden="true">
+        {#each waveformBars as h, i}
+          <span class="waveform-bar" style="--h:{h}"></span>
+        {/each}
+      </span>
+    {:else}
+      <svg class="mic-icon" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+      </svg>
+    {/if}
   </button>
   <span class="status-text" class:warn={warnStatus}>{statusMessage}</span>
   <div class="actions" style="--wails-draggable:no-drag">

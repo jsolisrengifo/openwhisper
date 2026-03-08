@@ -58,6 +58,12 @@ func (a *App) SaveSettings(s Settings) error {
 	if err := saveSettings(s); err != nil {
 		return err
 	}
+	// Restart hotkey listener if the shortcut changed
+	if a.hotkey != nil && a.settings != nil {
+		if s.Hotkey.Modifiers != a.settings.Hotkey.Modifiers || s.Hotkey.VKey != a.settings.Hotkey.VKey {
+			a.hotkey.Restart(s.Hotkey.Modifiers, s.Hotkey.VKey)
+		}
+	}
 	a.settings = &s
 	return nil
 }

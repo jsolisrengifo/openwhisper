@@ -6,7 +6,10 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-//go:embed build/windows/icon.ico
+// PNG works reliably with CreateIconFromResourceEx; ICO files cause
+// "The operation completed successfully." false-failure on Windows.
+//
+//go:embed build/appicon.png
 var trayIcon []byte
 
 // startTray creates the system tray icon using the Wails v3 native tray.

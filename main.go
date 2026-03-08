@@ -57,12 +57,18 @@ func main() {
 	appStruct.widgetWindow = widgetWindow
 
 	settingsWindow := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:   "settings",
-		Title:  "OpenWhisper \u2013 Configuraci\u00f3n",
-		Width:  400,
-		Height: 280,
-		Hidden: true,
-		URL:    "/settings.html",
+		Name:                "settings",
+		Title:               "OpenWhisper \u2013 Configuraci\u00f3n",
+		Width:               700,
+		Height:              480,
+		MinWidth:            700,
+		MinHeight:           480,
+		MaxWidth:            700,
+		MaxHeight:           480,
+		DisableResize:       true,
+		MaximiseButtonState: application.ButtonHidden,
+		Hidden:              true,
+		URL:                 "/settings.html",
 		Windows: application.WindowsWindow{
 			DisableIcon: true,
 		},
@@ -83,7 +89,7 @@ func main() {
 	appStruct.settings = settings
 
 	appStruct.hotkey = NewHotkeyManager(wailsApp)
-	go appStruct.hotkey.Start()
+	go appStruct.hotkey.Start(settings.Hotkey.Modifiers, settings.Hotkey.VKey)
 
 	startTray(wailsApp, widgetWindow)
 

@@ -6,15 +6,29 @@ import (
 	"path/filepath"
 )
 
+// HotkeyConfig stores a global keyboard shortcut definition.
+type HotkeyConfig struct {
+	Modifiers uint32 `json:"modifiers"` // Win32 MOD_* flags (excl. MOD_NOREPEAT)
+	VKey      uint32 `json:"vkey"`      // Win32 virtual-key code
+	Display   string `json:"display"`   // Human-readable label, e.g. "Ctrl+Space"
+}
+
 // Settings holds the app configuration
 type Settings struct {
-	APIKey string `json:"api_key"`
-	Model  string `json:"model"`
+	APIKey string       `json:"api_key"`
+	Model  string       `json:"model"`
+	Hotkey HotkeyConfig `json:"hotkey"`
 }
 
 // DefaultSettings returns the default configuration
 func DefaultSettings() Settings {
-	return Settings{}
+	return Settings{
+		Hotkey: HotkeyConfig{
+			Modifiers: 0x0002, // MOD_CONTROL
+			VKey:      0x20,   // VK_SPACE
+			Display:   "Ctrl+Space",
+		},
+	}
 }
 
 // settingsPath returns the path to the config file
