@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -11,6 +12,12 @@ import (
 var assets embed.FS
 
 func main() {
+	closeLog, err := initLogger()
+	if err != nil {
+		println("failed to init logger:", err.Error())
+	}
+	defer closeLog()
+
 	appStruct := NewApp()
 
 	wailsApp := application.New(application.Options{
@@ -33,11 +40,11 @@ func main() {
 
 	widgetWindow := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             "widget",
-		Width:            240,
+		Width:            190,
 		Height:           46,
-		MinWidth:         240,
+		MinWidth:         190,
 		MinHeight:        46,
-		MaxWidth:         240,
+		MaxWidth:         190,
 		MaxHeight:        46,
 		DisableResize:    true,
 		Frameless:        true,
@@ -87,6 +94,26 @@ func main() {
 		settings = &s
 	}
 	appStruct.settings = settings
+
+	// Apply the saved opacity once the WebView2 HWND is available.
+	// WindowShow fires before WebView2 fully initialises the native handle,
+	// so we retry in a goroutine until NativeWindow() returns a non-zero value.
+	widgetWindow.RegisterHook(events.Common.WindowShow, func(e *application.WindowEvent) {
+		if appStruct.settings == nil {
+			return
+		}
+		opacityPct := appStruct.settings.Opacity
+		go func() {
+			for i := 0; i < 40; i++ {
+				if uintptr(widgetWindow.NativeWindow()) != 0 {
+					applyRoundedCorners(uintptr(widgetWindow.NativeWindow()), 190, 46, 10)
+					applyWindowOpacity(widgetWindow, opacityPct)
+					return
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+		}()
+	})
 
 	appStruct.hotkey = NewHotkeyManager(wailsApp, widgetWindow)
 	go appStruct.hotkey.Start(settings.Hotkey.Modifiers, settings.Hotkey.VKey)

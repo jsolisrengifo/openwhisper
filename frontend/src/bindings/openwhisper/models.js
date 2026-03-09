@@ -86,6 +86,14 @@ export class Settings {
              */
             this["hotkey"] = (new HotkeyConfig());
         }
+        if (!("opacity" in $$source)) {
+            /**
+             * Widget window opacity: 10–100 (percent)
+             * @member
+             * @type {number}
+             */
+            this["opacity"] = 100;
+        }
 
         Object.assign(this, $$source);
     }

@@ -24,16 +24,18 @@ type HotkeyConfig struct {
 // Settings holds the app configuration.
 // APIKey is NOT persisted in the JSON file; it lives in the OS keyring.
 type Settings struct {
-	APIKey string       `json:"api_key,omitempty"` // Only in memory / transmitted to UI; never written to disk
-	Model  string       `json:"model"`
-	Hotkey HotkeyConfig `json:"hotkey"`
+	APIKey  string       `json:"api_key,omitempty"` // Only in memory / transmitted to UI; never written to disk
+	Model   string       `json:"model"`
+	Hotkey  HotkeyConfig `json:"hotkey"`
+	Opacity int          `json:"opacity"` // Widget window opacity: 10–100 (percent)
 }
 
 // diskSettings is the representation written to config.json.
 // The API key is intentionally absent.
 type diskSettings struct {
-	Model  string       `json:"model"`
-	Hotkey HotkeyConfig `json:"hotkey"`
+	Model   string       `json:"model"`
+	Hotkey  HotkeyConfig `json:"hotkey"`
+	Opacity int          `json:"opacity"`
 }
 
 // DefaultSettings returns the default configuration
@@ -44,6 +46,7 @@ func DefaultSettings() Settings {
 			VKey:      0x20,   // VK_SPACE
 			Display:   "Ctrl+Space",
 		},
+		Opacity: 100,
 	}
 }
 
@@ -105,8 +108,12 @@ func LoadSettings() (*Settings, error) {
 	}
 
 	s := Settings{
-		Model:  d.Model,
-		Hotkey: d.Hotkey,
+		Model:   d.Model,
+		Hotkey:  d.Hotkey,
+		Opacity: d.Opacity,
+	}
+	if s.Opacity == 0 {
+		s.Opacity = 100
 	}
 
 	// Load the API key from the secure keyring (best-effort: empty on error)
@@ -134,8 +141,9 @@ func saveSettings(s Settings) error {
 	}
 
 	d := diskSettings{
-		Model:  s.Model,
-		Hotkey: s.Hotkey,
+		Model:   s.Model,
+		Hotkey:  s.Hotkey,
+		Opacity: s.Opacity,
 	}
 
 	data, err := json.MarshalIndent(d, "", "  ")

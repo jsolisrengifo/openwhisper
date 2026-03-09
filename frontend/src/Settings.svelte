@@ -16,6 +16,9 @@
   let hotkeyVKey = $state(0x20);
   let capturingHotkey = $state(false);
 
+  // Appearance state
+  let opacity = $state(100);
+
   // Auto-save debounce
   let saveTimer = null;
 
@@ -28,6 +31,7 @@
           api_key: apiKey.trim(),
           model: model.trim(),
           hotkey: { modifiers: hotkeyModifiers, vkey: hotkeyVKey, display: hotkeyDisplay },
+          opacity: opacity,
         });
       } catch (_) {}
     }, 600);
@@ -43,6 +47,7 @@
           hotkeyModifiers = s.hotkey.modifiers;
           hotkeyVKey = s.hotkey.vkey;
         }
+        opacity = (s.opacity && s.opacity > 0) ? s.opacity : 100;
       }).catch(() => {});
     }
 
@@ -215,6 +220,30 @@
                   {/each}
                 </div>
               {/if}
+            </div>
+          </div>
+        </div>
+
+        <div class="section-group">
+          <p class="group-label">APARIENCIA</p>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-title">Transparencia</span>
+              <span class="setting-desc">Opacidad de la ventana flotante</span>
+            </div>
+            <div class="opacity-wrap">
+              <input
+                type="range"
+                min="10"
+                max="100"
+                step="5"
+                bind:value={opacity}
+                oninput={scheduleAutoSave}
+                class="opacity-slider"
+                style="--val: {opacity}"
+              />
+              <span class="opacity-value">{opacity}%</span>
             </div>
           </div>
         </div>
@@ -438,5 +467,48 @@
     color: rgba(0,0,0,0.70);
     white-space: nowrap;
     box-shadow: 0 1px 0 rgba(0,0,0,0.08);
+  }
+
+  /* Opacity slider */
+  .opacity-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+    width: 220px;
+  }
+
+  .opacity-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(to right, #0277bd calc(var(--val, 100) * 1%), rgba(0,0,0,0.15) calc(var(--val, 100) * 1%));
+    outline: none;
+    cursor: pointer;
+  }
+  .opacity-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #0277bd;
+    cursor: pointer;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    transition: box-shadow 0.15s;
+  }
+  .opacity-slider::-webkit-slider-thumb:hover {
+    box-shadow: 0 0 0 4px rgba(2,119,189,0.18);
+  }
+
+  .opacity-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(0,0,0,0.55);
+    min-width: 34px;
+    text-align: right;
   }
 </style>

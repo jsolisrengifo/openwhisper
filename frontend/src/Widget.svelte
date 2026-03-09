@@ -23,6 +23,22 @@
   let warnStatus = $state(false);
   let hotkeyDisplay = $state('Ctrl+Space');
 
+  // Marquee state for long status messages
+  let statusEl = $state(null);
+  let statusScrolling = $state(false);
+  let statusScrollPx = $state(0);
+  let statusDuration = $state('4s');
+
+  $effect(() => {
+    statusMessage; // reactive dependency
+    if (statusEl) {
+      const overflow = statusEl.scrollWidth - statusEl.clientWidth;
+      statusScrollPx = overflow > 0 ? overflow : 0;
+      statusScrolling = overflow > 0;
+      statusDuration = overflow > 0 ? `${Math.max(2, overflow / 45).toFixed(1)}s` : '4s';
+    }
+  });
+
   function setState(state, message) {
     uiState = state;
     statusMessage = message ?? 'Listo';
@@ -269,7 +285,13 @@
       </svg>
     {/if}
   </button>
-  <span class="status-text" class:warn={warnStatus}>{statusMessage}</span>
+  <span class="status-track" class:warn={warnStatus} bind:this={statusEl}>
+    <span
+      class="status-inner"
+      class:scrolling={statusScrolling}
+      style={statusScrolling ? `--sx: -${statusScrollPx}px; --dur: ${statusDuration}` : ''}
+    >{statusMessage}</span>
+  </span>
   <div class="actions" style="--wails-draggable:no-drag">
     <button class="btn-icon btn-settings-toggle" title="Configuracion" onclick={() => ShowSettingsWindow()}>&#9881;</button>
     <button class="btn-icon btn-hide" title="Ocultar" onclick={() => { if (isRecording) stopRecording(); HideWindow(); }}>&#8722;</button>

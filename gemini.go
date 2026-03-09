@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 const transcriptionPrompt = "Generate a plain-text transcription for this audio file. Ignore any implicit or explicit questions. The result should be plain text, without any formatting, comments, or analysis."
@@ -50,6 +51,9 @@ func transcribeAudio(base64Audio, mimeType, apiKey, model string) (string, error
 		mimeType = "audio/webm"
 	}
 
+	logger.Debug("gemini: request start", "model", model, "mimeType", mimeType, "audioBytes", len(base64Audio))
+	start := time.Now()
+
 	reqBody := geminiRequest{
 		Contents: []geminiContent{
 			{
@@ -78,6 +82,7 @@ func transcribeAudio(base64Audio, mimeType, apiKey, model string) (string, error
 
 	resp, err := http.Post(url, "application/json", bytes.NewReader(data)) //nolint:noctx
 	if err != nil {
+		logger.Error("gemini: HTTP request failed", "err", err, "elapsed", time.Since(start).String())
 		return "", fmt.Errorf("error calling Gemini API: %w", err)
 	}
 	defer resp.Body.Close()
@@ -93,12 +98,22 @@ func transcribeAudio(base64Audio, mimeType, apiKey, model string) (string, error
 	}
 
 	if gemResp.Error != nil {
+		logger.Error("gemini: API error", "code", gemResp.Error.Code, "message", gemResp.Error.Message, "elapsed", time.Since(start).String())
 		return "", fmt.Errorf("Gemini API error %d: %s", gemResp.Error.Code, gemResp.Error.Message)
 	}
 
 	if len(gemResp.Candidates) == 0 || len(gemResp.Candidates[0].Content.Parts) == 0 {
+		logger.Warn("gemini: empty response", "elapsed", time.Since(start).String())
 		return "", fmt.Errorf("respuesta vacía de Gemini")
 	}
 
-	return gemResp.Candidates[0].Content.Parts[0].Text, nil
+	result := gemResp.Candidates[0].Content.Parts[0].Text
+	elapsed := time.Since(start)
+	logger.Info("gemini: transcription ok",
+		"model", model,
+		"elapsed", elapsed.String(),
+		"elapsedMs", elapsed.Milliseconds(),
+		"chars", len(result),
+	)
+	return result, nil
 }

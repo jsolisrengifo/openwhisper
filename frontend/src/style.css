@@ -109,17 +109,28 @@ html, body {
 }
 
 /*  Texto de estado  */
-.status-text {
+.status-track {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.status-inner {
+    display: inline-block;
     font-size: 12px;
     color: rgba(255,255,255,0.55);
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    flex: 1;
-    min-width: 0;
+    vertical-align: middle;
 }
-.status-text.warn {
+.status-track.warn .status-inner {
     color: #ffb74d;
+}
+.status-inner.scrolling {
+    animation: status-marquee var(--dur, 4s) linear infinite;
+}
+@keyframes status-marquee {
+    0%,  15% { transform: translateX(0); }
+    85%, 100% { transform: translateX(var(--sx, 0px)); }
 }
 
 /*  Acciones (botones derecha)  */
