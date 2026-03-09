@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { TranscribeAudio, PasteText, ShowSettingsWindow, HideWindow, GetSettings } from './bindings/openwhisper/app.js';
   import { Events } from '@wailsio/runtime';
 
@@ -7,12 +7,14 @@
   let mediaRecorder = null;
   let audioChunks = [];
   let isRecording = false;
+  let isStarting = false;  // guard síncrono para la race condition en startRecording async
+  let isProcessing = false; // guard: evita doble transcripción/pegado
   let stream = null;
 
   // Waveform state
   let analyser = null;
   let waveformAnimId = null;
-  let waveformBars = $state([0.15, 0.15, 0.15, 0.15, 0.15]);
+  let waveformCanvas = $state(null); // bound via bind:this
 
   // Reactive UI state
   let isConfigured = $state(false);
@@ -34,42 +36,105 @@
 
   // ── Waveform animation ───────────────────────────────────────────────────
   function startWaveform(micStream) {
+    const canvas = waveformCanvas;
+    if (!canvas) return;
     try {
       const audioCtx = new AudioContext();
       const source = audioCtx.createMediaStreamSource(micStream);
       analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 32;
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.6;
       source.connect(analyser);
 
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      const BAR_COUNT = 5;
+      const bufLen = analyser.fftSize;
+      const floatBuf = new Float32Array(bufLen);
+      const ctx2d = canvas.getContext('2d');
 
-      function draw() {
+      const W = canvas.width;   // 38
+      const H = canvas.height;  // 28
+      const mid = H / 2;
+
+      // Parámetros de barras
+      const BAR_W   = 3;     // ancho de barra en px
+      const GAP     = 2;     // separación entre barras en px
+      const STEP    = BAR_W + GAP;
+      const N_BARS  = Math.floor(W / STEP); // ~19 barras
+      const BAR_MAX = mid - 2;              // altura máxima (mitad del canvas - margen)
+      const BAR_MIN = 1.5;                  // altura mínima visible en silencio
+
+      // Historial de amplitudes (una por barra)
+      const amp     = new Float32Array(N_BARS);
+      const SAMPLE_MS = 80;  // ~12 barras/segundo → scroll visible pero no tan rápido
+      let lastTs = -SAMPLE_MS;
+
+      function draw(ts) {
         waveformAnimId = requestAnimationFrame(draw);
-        analyser.getByteFrequencyData(dataArray);
-        const slice = Math.floor(dataArray.length / BAR_COUNT);
-        waveformBars = Array.from({ length: BAR_COUNT }, (_, i) => {
-          const val = dataArray[i * slice] / 255;
-          return Math.max(0.08, val);
-        });
+
+        if (ts - lastTs >= SAMPLE_MS) {
+          lastTs = ts;
+          analyser.getFloatTimeDomainData(floatBuf);
+          // RMS del frame actual
+          let sum = 0;
+          for (let i = 0; i < bufLen; i++) sum += floatBuf[i] * floatBuf[i];
+          const rms = Math.sqrt(sum / bufLen);
+          // Scroll: shift left, nuevo valor a la derecha
+          amp.copyWithin(0, 1);
+          amp[N_BARS - 1] = Math.min(1, rms * 6);
+        }
+
+        ctx2d.clearRect(0, 0, W, H);
+
+        for (let i = 0; i < N_BARS; i++) {
+          const halfH = amp[i] * BAR_MAX + BAR_MIN;
+          const x     = i * STEP;
+          const y     = mid - halfH;
+          const barH  = halfH * 2;
+
+          // Barra sólida con bordes redondeados, simétrica al centro
+          ctx2d.fillStyle = '#ef5350';
+          roundRect(ctx2d, x, y, BAR_W, barH, BAR_W / 2);
+        }
       }
-      draw();
+
+      requestAnimationFrame(draw);
     } catch (_) {}
+  }
+
+  // Dibuja un rectángulo con esquinas redondeadas (compatible con todos los navegadores)
+  function roundRect(ctx2d, x, y, w, h, r) {
+    if (h < r * 2) r = h / 2;
+    ctx2d.beginPath();
+    ctx2d.moveTo(x + r, y);
+    ctx2d.lineTo(x + w - r, y);
+    ctx2d.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx2d.lineTo(x + w, y + h - r);
+    ctx2d.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx2d.lineTo(x + r, y + h);
+    ctx2d.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx2d.lineTo(x, y + r);
+    ctx2d.quadraticCurveTo(x, y, x + r, y);
+    ctx2d.closePath();
+    ctx2d.fill();
   }
 
   function stopWaveform() {
     if (waveformAnimId) { cancelAnimationFrame(waveformAnimId); waveformAnimId = null; }
-    waveformBars = [0.15, 0.15, 0.15, 0.15, 0.15];
+    if (waveformCanvas) {
+      const ctx2d = waveformCanvas.getContext('2d');
+      ctx2d.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+    }
     analyser = null;
   }
 
   async function startRecording() {
-    if (isRecording) return;
-    if (!isConfigured) { ShowSettingsWindow(); return; }
+    if (isRecording || isStarting || isProcessing) return;
+    isStarting = true; // bloquear re-entradas mientras getUserMedia resuelve
+    if (!isConfigured) { isStarting = false; ShowSettingsWindow(); return; }
 
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     } catch (err) {
+      isStarting = false;
       setState('error', 'Sin micrófono');
       setTimeout(() => setState(null), 3000);
       return;
@@ -87,7 +152,9 @@
     mediaRecorder.onstop = handleRecordingStop;
     mediaRecorder.start();
     isRecording = true;
+    isStarting = false;
     setState('recording', 'Grabando');
+    await tick(); // esperar a que Svelte monte el canvas
     startWaveform(stream);
   }
 
@@ -99,9 +166,24 @@
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
   }
 
+  // Cancela la grabación sin transcribir (Escape)
+  function cancelRecording() {
+    if (!isRecording || !mediaRecorder) return;
+    stopWaveform();
+    mediaRecorder.onstop = null; // desconecta el handler para no transcribir
+    mediaRecorder.stop();
+    isRecording = false;
+    audioChunks = [];
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    setState(null, 'Listo');
+  }
+
   async function handleRecordingStop() {
+    if (isProcessing) return; // guard contra doble ejecución
+    isProcessing = true;
     setState('transcribing', 'Transcribiendo');
     const blob = new Blob(audioChunks, { type: 'audio/webm' });
+    audioChunks = []; // liberar memoria inmediatamente
     const mimeType = blob.type || 'audio/webm';
 
     try {
@@ -121,6 +203,8 @@
       const msg = (err && err.message) ? err.message : String(err);
       setState('error', msg.length > 30 ? msg.substring(0, 30) + '\u2026' : msg);
       setTimeout(() => setState(null), 5000);
+    } finally {
+      isProcessing = false;
     }
   }
 
@@ -137,7 +221,13 @@
     if (isRecording) { stopRecording(); } else { startRecording(); }
   }
 
+  function onKeyDown(e) {
+    if (e.key === 'Escape' && isRecording) cancelRecording();
+  }
+
   onMount(() => {
+    window.addEventListener('keydown', onKeyDown);
+
     GetSettings().then(s => {
       isConfigured = !!(s.api_key && s.model);
       if (!isConfigured) setUnconfigured();
@@ -156,6 +246,8 @@
         if (s.hotkey && s.hotkey.display) hotkeyDisplay = s.hotkey.display;
       }).catch(() => {});
     });
+
+    return () => window.removeEventListener('keydown', onKeyDown);
   });
 </script>
 
@@ -171,11 +263,7 @@
     onclick={toggleRecording}
   >
     {#if uiState === 'recording'}
-      <span class="waveform" aria-hidden="true">
-        {#each waveformBars as h, i}
-          <span class="waveform-bar" style="--h:{h}"></span>
-        {/each}
-      </span>
+      <canvas bind:this={waveformCanvas} class="waveform-canvas" width="38" height="28" aria-hidden="true"></canvas>
     {:else}
       <svg class="mic-icon" viewBox="0 0 24 24" fill="currentColor">
         <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>

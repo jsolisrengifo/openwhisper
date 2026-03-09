@@ -88,7 +88,7 @@ func main() {
 	}
 	appStruct.settings = settings
 
-	appStruct.hotkey = NewHotkeyManager(wailsApp)
+	appStruct.hotkey = NewHotkeyManager(wailsApp, widgetWindow)
 	go appStruct.hotkey.Start(settings.Hotkey.Modifiers, settings.Hotkey.VKey)
 
 	startTray(wailsApp, widgetWindow)

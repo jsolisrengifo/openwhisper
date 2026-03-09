@@ -29,18 +29,20 @@ type MSG struct {
 
 // HotkeyManager handles global hotkey registration and listening
 type HotkeyManager struct {
-	app    *application.App
-	quit   chan struct{}
-	mu     sync.Mutex
-	user32 *windows.LazyDLL
+	app          *application.App
+	widgetWindow *application.WebviewWindow
+	quit         chan struct{}
+	mu           sync.Mutex
+	user32       *windows.LazyDLL
 }
 
 // NewHotkeyManager creates a new hotkey manager
-func NewHotkeyManager(app *application.App) *HotkeyManager {
+func NewHotkeyManager(app *application.App, widgetWindow *application.WebviewWindow) *HotkeyManager {
 	return &HotkeyManager{
-		app:    app,
-		quit:   make(chan struct{}),
-		user32: windows.NewLazySystemDLL("user32.dll"),
+		app:          app,
+		widgetWindow: widgetWindow,
+		quit:         make(chan struct{}),
+		user32:       windows.NewLazySystemDLL("user32.dll"),
 	}
 }
 
@@ -92,6 +94,8 @@ func (h *HotkeyManager) Start(modifiers, vkey uint32) {
 		)
 
 		if ret != 0 && msg.Message == wmHotkey && msg.WParam == hotkeyID {
+			// Focus the widget window so the webview captures keyboard events (e.g. Escape)
+			h.widgetWindow.Focus()
 			h.app.Event.Emit("toggle-recording")
 		}
 
