@@ -1,6 +1,6 @@
 <script>
   import { onMount, tick } from 'svelte';
-  import { TranscribeAudio, PasteText, ShowSettingsWindow, HideWindow, GetSettings } from './bindings/openwhisper/app.js';
+  import { TranscribeAudio, PasteText, ShowSettingsWindow, HideWindow, GetSettings, EnableCancelHotkey, DisableCancelHotkey } from './bindings/openwhisper/app.js';
   import { Events } from '@wailsio/runtime';
 
   // Non-reactive internal state
@@ -153,6 +153,7 @@
     mediaRecorder.start();
     isRecording = true;
     isStarting = false;
+    EnableCancelHotkey(); // registrar Escape global solo mientras se graba
     setState('recording', 'Grabando');
     await tick(); // esperar a que Svelte monte el canvas
     startWaveform(stream);
@@ -161,15 +162,17 @@
   function stopRecording() {
     if (!isRecording || !mediaRecorder) return;
     stopWaveform();
+    DisableCancelHotkey();
     mediaRecorder.stop();
     isRecording = false;
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
   }
 
-  // Cancela la grabación sin transcribir (Escape)
+  // Cancela la grabación sin transcribir (Escape global desde Go)
   function cancelRecording() {
     if (!isRecording || !mediaRecorder) return;
     stopWaveform();
+    DisableCancelHotkey();
     mediaRecorder.onstop = null; // desconecta el handler para no transcribir
     mediaRecorder.stop();
     isRecording = false;
@@ -221,13 +224,7 @@
     if (isRecording) { stopRecording(); } else { startRecording(); }
   }
 
-  function onKeyDown(e) {
-    if (e.key === 'Escape' && isRecording) cancelRecording();
-  }
-
   onMount(() => {
-    window.addEventListener('keydown', onKeyDown);
-
     GetSettings().then(s => {
       isConfigured = !!(s.api_key && s.model);
       if (!isConfigured) setUnconfigured();
@@ -238,6 +235,7 @@
     });
 
     Events.On('toggle-recording', toggleRecording);
+    Events.On('cancel-recording', cancelRecording);
     Events.On('open-settings', () => ShowSettingsWindow());
     Events.On('settings:saved', () => {
       GetSettings().then(s => {
@@ -247,7 +245,7 @@
       }).catch(() => {});
     });
 
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {};
   });
 </script>
 

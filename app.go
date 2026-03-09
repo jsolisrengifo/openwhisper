@@ -39,6 +39,20 @@ func (a *App) TranscribeAudio(base64Audio string, mimeType string) (string, erro
 	return transcribeAudio(base64Audio, mimeType, a.settings.APIKey, a.settings.Model)
 }
 
+// EnableCancelHotkey registers Escape as a global hotkey to cancel recording.
+func (a *App) EnableCancelHotkey() {
+	if a.hotkey != nil {
+		a.hotkey.StartEscapeListener()
+	}
+}
+
+// DisableCancelHotkey unregisters the Escape hotkey.
+func (a *App) DisableCancelHotkey() {
+	if a.hotkey != nil {
+		a.hotkey.StopEscapeListener()
+	}
+}
+
 // PasteText writes text to clipboard and simulates Ctrl+V
 func (a *App) PasteText(text string) error {
 	a.app.Clipboard.SetText(text)

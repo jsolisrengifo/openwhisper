@@ -8,5 +8,6 @@ export {
 };
 
 export {
+    HotkeyConfig,
     Settings
 } from "./models.js";

@@ -7,7 +7,56 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
- * Settings holds the app configuration
+ * HotkeyConfig stores a global keyboard shortcut definition.
+ */
+export class HotkeyConfig {
+    /**
+     * Creates a new HotkeyConfig instance.
+     * @param {Partial<HotkeyConfig>} [$$source = {}] - The source object to create the HotkeyConfig.
+     */
+    constructor($$source = {}) {
+        if (!("modifiers" in $$source)) {
+            /**
+             * Win32 MOD_* flags (excl. MOD_NOREPEAT)
+             * @member
+             * @type {number}
+             */
+            this["modifiers"] = 0;
+        }
+        if (!("vkey" in $$source)) {
+            /**
+             * Win32 virtual-key code
+             * @member
+             * @type {number}
+             */
+            this["vkey"] = 0;
+        }
+        if (!("display" in $$source)) {
+            /**
+             * Human-readable label, e.g. "Ctrl+Space"
+             * @member
+             * @type {string}
+             */
+            this["display"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new HotkeyConfig instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {HotkeyConfig}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new HotkeyConfig(/** @type {Partial<HotkeyConfig>} */($$parsedSource));
+    }
+}
+
+/**
+ * Settings holds the app configuration.
+ * APIKey is NOT persisted in the JSON file; it lives in the OS keyring.
  */
 export class Settings {
     /**
@@ -15,12 +64,13 @@ export class Settings {
      * @param {Partial<Settings>} [$$source = {}] - The source object to create the Settings.
      */
     constructor($$source = {}) {
-        if (!("api_key" in $$source)) {
+        if (/** @type {any} */(false)) {
             /**
+             * Only in memory / transmitted to UI; never written to disk
              * @member
-             * @type {string}
+             * @type {string | undefined}
              */
-            this["api_key"] = "";
+            this["api_key"] = undefined;
         }
         if (!("model" in $$source)) {
             /**
@@ -28,6 +78,13 @@ export class Settings {
              * @type {string}
              */
             this["model"] = "";
+        }
+        if (!("hotkey" in $$source)) {
+            /**
+             * @member
+             * @type {HotkeyConfig}
+             */
+            this["hotkey"] = (new HotkeyConfig());
         }
 
         Object.assign(this, $$source);
@@ -39,7 +96,14 @@ export class Settings {
      * @returns {Settings}
      */
     static createFrom($$source = {}) {
+        const $$createField2_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("hotkey" in $$parsedSource) {
+            $$parsedSource["hotkey"] = $$createField2_0($$parsedSource["hotkey"]);
+        }
         return new Settings(/** @type {Partial<Settings>} */($$parsedSource));
     }
 }
+
+// Private type creation functions
+const $$createType0 = HotkeyConfig.createFrom;

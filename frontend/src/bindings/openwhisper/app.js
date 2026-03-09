@@ -16,6 +16,22 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
+ * DisableCancelHotkey unregisters the Escape hotkey.
+ * @returns {$CancellablePromise<void>}
+ */
+export function DisableCancelHotkey() {
+    return $Call.ByID(1634357387);
+}
+
+/**
+ * EnableCancelHotkey registers Escape as a global hotkey to cancel recording.
+ * @returns {$CancellablePromise<void>}
+ */
+export function EnableCancelHotkey() {
+    return $Call.ByID(2388360750);
+}
+
+/**
  * GetSettings returns current settings
  * @returns {$CancellablePromise<$models.Settings>}
  */

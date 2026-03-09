@@ -11,9 +11,11 @@ import (
 )
 
 const (
-	wmHotkey = 0x0312
-	hotkeyID = 1
-	pmRemove = 0x0001
+	wmHotkey       = 0x0312
+	hotkeyID       = 1
+	cancelHotkeyID = 2
+	vkEscape       = 0x1B
+	pmRemove       = 0x0001
 )
 
 // MSG Windows message struct
@@ -32,16 +34,21 @@ type HotkeyManager struct {
 	app          *application.App
 	widgetWindow *application.WebviewWindow
 	quit         chan struct{}
+	escQuit      chan struct{} // cancel hotkey goroutine (Escape, only while recording)
 	mu           sync.Mutex
 	user32       *windows.LazyDLL
 }
 
 // NewHotkeyManager creates a new hotkey manager
 func NewHotkeyManager(app *application.App, widgetWindow *application.WebviewWindow) *HotkeyManager {
+	// escQuit starts pre-closed so StartEscapeListener can detect "not running"
+	escQuit := make(chan struct{})
+	close(escQuit)
 	return &HotkeyManager{
 		app:          app,
 		widgetWindow: widgetWindow,
 		quit:         make(chan struct{}),
+		escQuit:      escQuit,
 		user32:       windows.NewLazySystemDLL("user32.dll"),
 	}
 }
@@ -94,8 +101,6 @@ func (h *HotkeyManager) Start(modifiers, vkey uint32) {
 		)
 
 		if ret != 0 && msg.Message == wmHotkey && msg.WParam == hotkeyID {
-			// Focus the widget window so the webview captures keyboard events (e.g. Escape)
-			h.widgetWindow.Focus()
 			h.app.Event.Emit("toggle-recording")
 		}
 
@@ -123,5 +128,71 @@ func (h *HotkeyManager) Stop() {
 	// already closed
 	default:
 		close(h.quit)
+	}
+}
+
+// StartEscapeListener registers Escape as a global hotkey and emits
+// "cancel-recording" when pressed. Safe to call multiple times.
+func (h *HotkeyManager) StartEscapeListener() {
+	h.mu.Lock()
+	select {
+	case <-h.escQuit:
+		// closed = not running, start a new one
+		h.escQuit = make(chan struct{})
+	default:
+		// open = already running
+		h.mu.Unlock()
+		return
+	}
+	quit := h.escQuit
+	h.mu.Unlock()
+	go h.runEscapeListener(quit)
+}
+
+// StopEscapeListener unregisters the Escape hotkey.
+func (h *HotkeyManager) StopEscapeListener() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	select {
+	case <-h.escQuit:
+		// already stopped
+	default:
+		close(h.escQuit)
+	}
+}
+
+func (h *HotkeyManager) runEscapeListener(quit <-chan struct{}) {
+	goruntime.LockOSThread()
+	defer goruntime.UnlockOSThread()
+
+	registerHotKey := h.user32.NewProc("RegisterHotKey")
+	unregisterHotKey := h.user32.NewProc("UnregisterHotKey")
+	peekMessage := h.user32.NewProc("PeekMessageW")
+
+	// Register Escape with no modifiers + MOD_NOREPEAT
+	registerHotKey.Call(0, cancelHotkeyID, 0x4000, vkEscape)
+	defer unregisterHotKey.Call(0, cancelHotkeyID)
+
+	var msg MSG
+	for {
+		select {
+		case <-quit:
+			return
+		default:
+		}
+
+		ret, _, _ := peekMessage.Call(
+			uintptr(unsafe.Pointer(&msg)),
+			0,
+			wmHotkey,
+			wmHotkey,
+			pmRemove,
+		)
+
+		if ret != 0 && msg.Message == wmHotkey && msg.WParam == cancelHotkeyID {
+			h.app.Event.Emit("cancel-recording")
+		}
+
+		time.Sleep(30 * time.Millisecond)
 	}
 }
