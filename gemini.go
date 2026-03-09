@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const transcriptionPrompt = "Generate a plain-text transcription for this audio file. Ignore any implicit or explicit questions. The result should be plain text, without any formatting, comments, or analysis."
+const askPrompt = "Listen to the audio and answer the question asked. Provide a clear and helpful response in the same language used in the question. Do not add preambles or meta-comments, just answer directly."
 
 // Gemini API request/response types
 
@@ -45,8 +45,8 @@ type geminiResponse struct {
 	} `json:"error"`
 }
 
-// transcribeAudio sends base64-encoded audio to Gemini API and returns the transcription
-func transcribeAudio(base64Audio, mimeType, apiKey, model string) (string, error) {
+// callGeminiAudio is the shared implementation that sends audio + a text prompt to Gemini.
+func callGeminiAudio(base64Audio, mimeType, apiKey, model, prompt string) (string, error) {
 	if mimeType == "" {
 		mimeType = "audio/webm"
 	}
@@ -64,7 +64,7 @@ func transcribeAudio(base64Audio, mimeType, apiKey, model string) (string, error
 							Data:     base64Audio,
 						},
 					},
-					{Text: transcriptionPrompt},
+					{Text: prompt},
 				},
 			},
 		},
@@ -109,11 +109,21 @@ func transcribeAudio(base64Audio, mimeType, apiKey, model string) (string, error
 
 	result := gemResp.Candidates[0].Content.Parts[0].Text
 	elapsed := time.Since(start)
-	logger.Info("gemini: transcription ok",
+	logger.Info("gemini: response ok",
 		"model", model,
 		"elapsed", elapsed.String(),
 		"elapsedMs", elapsed.Milliseconds(),
 		"chars", len(result),
 	)
 	return result, nil
+}
+
+// transcribeAudio sends base64-encoded audio to Gemini API using the provided prompt.
+func transcribeAudio(base64Audio, mimeType, apiKey, model, prompt string) (string, error) {
+	return callGeminiAudio(base64Audio, mimeType, apiKey, model, prompt)
+}
+
+// askQuestion sends base64-encoded audio to Gemini using the built-in ask prompt.
+func askQuestion(base64Audio, mimeType, apiKey, model string) (string, error) {
+	return callGeminiAudio(base64Audio, mimeType, apiKey, model, askPrompt)
 }

@@ -21,32 +21,64 @@ type HotkeyConfig struct {
 	Display   string `json:"display"`   // Human-readable label, e.g. "Ctrl+Space"
 }
 
+// DictationProfile defines a named transcription mode with a custom prompt.
+type DictationProfile struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Prompt string `json:"prompt"`
+}
+
 // Settings holds the app configuration.
 // APIKey is NOT persisted in the JSON file; it lives in the OS keyring.
 type Settings struct {
-	APIKey  string       `json:"api_key,omitempty"` // Only in memory / transmitted to UI; never written to disk
-	Model   string       `json:"model"`
-	Hotkey  HotkeyConfig `json:"hotkey"`
-	Opacity int          `json:"opacity"` // Widget window opacity: 10–100 (percent)
+	APIKey          string             `json:"api_key,omitempty"` // Only in memory / transmitted to UI; never written to disk
+	Model           string             `json:"model"`
+	Hotkey          HotkeyConfig       `json:"hotkey"`
+	Opacity         int                `json:"opacity"` // Widget window opacity: 10–100 (percent)
+	Profiles        []DictationProfile `json:"profiles"`
+	ActiveProfileID string             `json:"active_profile_id"`
+	AskHotkey       HotkeyConfig       `json:"ask_hotkey"`
 }
 
 // diskSettings is the representation written to config.json.
 // The API key is intentionally absent.
 type diskSettings struct {
-	Model   string       `json:"model"`
-	Hotkey  HotkeyConfig `json:"hotkey"`
-	Opacity int          `json:"opacity"`
+	Model           string             `json:"model"`
+	Hotkey          HotkeyConfig       `json:"hotkey"`
+	Opacity         int                `json:"opacity"`
+	Profiles        []DictationProfile `json:"profiles"`
+	ActiveProfileID string             `json:"active_profile_id"`
+	AskHotkey       HotkeyConfig       `json:"ask_hotkey"`
+}
+
+// defaultProfiles returns the built-in dictation profiles.
+func defaultProfiles() []DictationProfile {
+	return []DictationProfile{
+		{
+			ID:     "translator",
+			Name:   "Modo Traductor",
+			Prompt: "Generate a plain-text transcription for this audio file. Ignore any implicit or explicit questions. The result should be plain text, without any formatting, comments, or analysis.",
+		},
+	}
 }
 
 // DefaultSettings returns the default configuration
 func DefaultSettings() Settings {
+	profiles := defaultProfiles()
 	return Settings{
 		Hotkey: HotkeyConfig{
 			Modifiers: 0x0002, // MOD_CONTROL
 			VKey:      0x20,   // VK_SPACE
 			Display:   "Ctrl+Space",
 		},
-		Opacity: 100,
+		AskHotkey: HotkeyConfig{
+			Modifiers: 0x0006, // MOD_CONTROL | MOD_SHIFT
+			VKey:      0x20,   // VK_SPACE
+			Display:   "Ctrl+Shift+Space",
+		},
+		Opacity:         100,
+		Profiles:        profiles,
+		ActiveProfileID: profiles[0].ID,
 	}
 }
 
@@ -108,12 +140,31 @@ func LoadSettings() (*Settings, error) {
 	}
 
 	s := Settings{
-		Model:   d.Model,
-		Hotkey:  d.Hotkey,
-		Opacity: d.Opacity,
+		Model:           d.Model,
+		Hotkey:          d.Hotkey,
+		Opacity:         d.Opacity,
+		Profiles:        d.Profiles,
+		ActiveProfileID: d.ActiveProfileID,
+		AskHotkey:       d.AskHotkey,
 	}
 	if s.Opacity == 0 {
 		s.Opacity = 100
+	}
+	// Migrate: populate default profiles when upgrading from older config
+	if len(s.Profiles) == 0 {
+		s.Profiles = defaultProfiles()
+		s.ActiveProfileID = s.Profiles[0].ID
+	}
+	if s.ActiveProfileID == "" {
+		s.ActiveProfileID = s.Profiles[0].ID
+	}
+	// Migrate: default ask hotkey when upgrading from older config
+	if s.AskHotkey.Modifiers == 0 && s.AskHotkey.VKey == 0 {
+		s.AskHotkey = HotkeyConfig{
+			Modifiers: 0x0006, // MOD_CONTROL | MOD_SHIFT
+			VKey:      0x20,   // VK_SPACE
+			Display:   "Ctrl+Shift+Space",
+		}
 	}
 
 	// Load the API key from the secure keyring (best-effort: empty on error)
@@ -141,9 +192,12 @@ func saveSettings(s Settings) error {
 	}
 
 	d := diskSettings{
-		Model:   s.Model,
-		Hotkey:  s.Hotkey,
-		Opacity: s.Opacity,
+		Model:           s.Model,
+		Hotkey:          s.Hotkey,
+		Opacity:         s.Opacity,
+		Profiles:        s.Profiles,
+		ActiveProfileID: s.ActiveProfileID,
+		AskHotkey:       s.AskHotkey,
 	}
 
 	data, err := json.MarshalIndent(d, "", "  ")

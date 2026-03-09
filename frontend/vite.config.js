@@ -11,6 +11,7 @@ export default defineConfig({
       input: {
         main: path.resolve('index.html'),
         settings: path.resolve('settings.html'),
+        ask: path.resolve('ask.html'),
       },
     },
   },

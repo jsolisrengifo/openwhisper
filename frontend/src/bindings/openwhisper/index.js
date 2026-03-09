@@ -8,6 +8,7 @@ export {
 };
 
 export {
+    DictationProfile,
     HotkeyConfig,
     Settings
 } from "./models.js";

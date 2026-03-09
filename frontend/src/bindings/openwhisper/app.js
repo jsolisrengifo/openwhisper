@@ -16,6 +16,16 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as $models from "./models.js";
 
 /**
+ * AskAI sends audio to Gemini and returns an AI-generated answer (not a transcription).
+ * @param {string} base64Audio
+ * @param {string} mimeType
+ * @returns {$CancellablePromise<string>}
+ */
+export function AskAI(base64Audio, mimeType) {
+    return $Call.ByID(3851891320, base64Audio, mimeType);
+}
+
+/**
  * DisableCancelHotkey unregisters the Escape hotkey.
  * @returns {$CancellablePromise<void>}
  */
@@ -42,6 +52,14 @@ export function GetSettings() {
 }
 
 /**
+ * HideAskWindow hides the ask/answer window.
+ * @returns {$CancellablePromise<void>}
+ */
+export function HideAskWindow() {
+    return $Call.ByID(2450570702);
+}
+
+/**
  * HideSettingsWindow closes the settings window
  * @returns {$CancellablePromise<void>}
  */
@@ -50,7 +68,7 @@ export function HideSettingsWindow() {
 }
 
 /**
- * HideWindow hides the floating widget (used by the \u2212 button)
+ * HideWindow hides the floating widget (used by the − button)
  * @returns {$CancellablePromise<void>}
  */
 export function HideWindow() {
@@ -73,6 +91,15 @@ export function PasteText(text) {
  */
 export function SaveSettings(s) {
     return $Call.ByID(1949631069, s);
+}
+
+/**
+ * ShowAnswer displays the AI answer in the floating ask window.
+ * @param {string} text
+ * @returns {$CancellablePromise<void>}
+ */
+export function ShowAnswer(text) {
+    return $Call.ByID(3513394294, text);
 }
 
 /**

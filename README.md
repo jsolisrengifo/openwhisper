@@ -1,6 +1,6 @@
 # OpenWhisper
 
-A lightweight, always-on-top floating dictation app. Press **Ctrl+Space** (or click the mic button) to record your voice, and OpenWhisper will transcribe it using the **Gemini API** and automatically paste the result wherever your cursor is.
+A lightweight, always-on-top floating dictation app. Press **Ctrl+Space** (or click the mic button) to record your voice, and OpenWhisper will transcribe it using the **Gemini API** and automatically paste the result wherever your cursor is. Press **Ctrl+Shift+Space** to ask a question directly to the AI and get the answer in a floating response window.
 
 Built with [Go](https://go.dev/) + [Wails v3](https://v3.wails.io/)
 
@@ -9,10 +9,12 @@ Built with [Go](https://go.dev/) + [Wails v3](https://v3.wails.io/)
 ## Features
 
 - **Global hotkey**  `Ctrl+Space` starts/stops recording from any app
+- **Ask AI hotkey**  `Ctrl+Alt+A` records a spoken question and shows the AI answer in a floating window
+- **Dictation profiles**  create multiple named profiles, each with a custom prompt — switch the active profile at any time
 - **Auto-paste**  transcribed text is pasted directly at your cursor position
 - **Always on top**  frameless floating window, stays visible over other apps
-- **Gemini-powered**  uses Google Gemini API for high-quality transcription
-- **Minimal UI**  compact window, dark theme, no distractions
+- **Gemini-powered**  uses Google Gemini API for high-quality transcription and Q&A
+- **Minimal UI**  compact widget window, dark theme, no distractions
 - **Secure credential storage**  API key stored in the OS native keyring, never in plain text
 - **Live configuration refresh**  the widget updates instantly when settings are saved
 
@@ -54,22 +56,42 @@ The compiled `.exe` will be placed in `build/bin/`.
 
 OpenWhisper requires two fields to operate. If either is missing when the app starts, the status bar will show **⚙ Config. pendiente** and recording will be blocked until configuration is complete.
 
-Click the **⚙** button to open settings and fill in:
+Click the **⚙** button to open settings:
+
+### API / Model (Configuración tab)
 
 | Field | Description |
 |-------|-------------|
 | **API Key** | Your Google Gemini API key (e.g. `AIzaSy...`) |
 | **Model** | Any compatible Gemini model name (e.g. `gemini-2.0-flash`) |
 
-Both fields are required. The app has no hardcoded defaults — you choose the model.
+### Keyboard shortcuts (Configuración tab)
 
-Settings are auto-saved 600 ms after the last keystroke. The floating widget refreshes immediately — the "⚙ Config. pendiente" indicator disappears as soon as a valid API key and model are saved, with no need to restart the app.
+| Shortcut | Action | Default |
+|----------|--------|---------|
+| Activar grabación | Start/stop recording and paste transcription | `Ctrl+Space` |
+| Preguntar a la IA | Record a spoken question, show AI answer in floating window | `Ctrl+Shift+Space` |
+
+Both shortcuts are fully customizable — click the key combination to capture a new one.
+
+### Dictation profiles (Perfiles tab)
+
+Each profile defines how the AI processes the audio via a **system prompt**. You can:
+
+- Create as many profiles as you need with **+ Nuevo perfil**
+- Edit the name and prompt of each profile inline
+- Set one profile as **Activo** — its prompt is used for all transcriptions
+- Delete profiles (at least one must remain)
+
+The default profile is **Modo Traductor** with a prompt that produces clean plain-text transcriptions.
+
+Settings are auto-saved 600 ms after the last change. The widget refreshes immediately.
 
 ### Storage locations
 
 | Data | Location |
 |------|----------|
-| Model, hotkey | `%APPDATA%\openwhisper\config.json` (Windows) / `~/.config/openwhisper/config.json` (Linux) / `~/Library/Application Support/openwhisper/config.json` (macOS) |
+| Model, hotkeys, profiles | `%APPDATA%\openwhisper\config.json` (Windows) / `~/.config/openwhisper/config.json` (Linux) / `~/Library/Application Support/openwhisper/config.json` (macOS) |
 | **API Key** | **OS native keyring** — Windows Credential Manager / macOS Keychain / Linux Secret Service |
 
 > **Security note:** The API key is never written to `config.json`. It is stored exclusively in the operating system's secure credential store, isolated from the file system and inaccessible to other user processes without explicit authorization.
@@ -95,10 +117,13 @@ npm install
 
 ## Regenerating Bindings
 
-If Go functions exposed to the frontend change, regenerate the JS bindings:
+If Go functions exposed to the frontend change, regenerate the JS bindings and copy them to `frontend/src/bindings/`:
 
 ```bash
-wails3 generate bindings -d frontend/src/bindings -clean=true
+wails3 generate bindings openwhisper
+# Then copy the generated files to the correct location:
+Copy-Item frontend/bindings/openwhisper/* frontend/src/bindings/openwhisper/ -Force
+Remove-Item -Recurse -Force frontend/bindings
 ```
 
 ---
@@ -112,9 +137,9 @@ wails3 generate bindings -d frontend/src/bindings -clean=true
 | Frontend | [Svelte 5](https://svelte.dev/) + Vite 5 |
 | Runtime bridge | [@wailsio/runtime](https://www.npmjs.com/package/@wailsio/runtime) |
 | Renderer | WebView2 (Chromium) |
-| Transcription | Google Gemini API |
+| Transcription / Q&A | Google Gemini API |
 | Credential storage | [go-keyring](https://github.com/zalando/go-keyring) (WCM / Keychain / Secret Service) |
-| Global hotkey | Windows `RegisterHotKey` API |
+| Global hotkeys | Windows `RegisterHotKey` API |
 | Auto-paste | Windows `keybd_event` API |
 | Task runner | [Task](https://taskfile.dev/) |
 

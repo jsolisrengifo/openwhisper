@@ -1,12 +1,13 @@
 <script>
   import { onMount, tick } from 'svelte';
-  import { TranscribeAudio, PasteText, ShowSettingsWindow, HideWindow, GetSettings, EnableCancelHotkey, DisableCancelHotkey } from './bindings/openwhisper/app.js';
+  import { TranscribeAudio, AskAI, ShowAnswer, PasteText, ShowSettingsWindow, HideWindow, GetSettings, EnableCancelHotkey, DisableCancelHotkey } from './bindings/openwhisper/app.js';
   import { Events } from '@wailsio/runtime';
 
   // Non-reactive internal state
   let mediaRecorder = null;
   let audioChunks = [];
   let isRecording = false;
+  let isAskMode = false; // true when recording for IA question
   let isStarting = false;  // guard síncrono para la race condition en startRecording async
   let isProcessing = false; // guard: evita doble transcripción/pegado
   let stream = null;
@@ -22,6 +23,7 @@
   let statusMessage = $state('Listo');
   let warnStatus = $state(false);
   let hotkeyDisplay = $state('Ctrl+Space');
+  let askHotkeyDisplay = $state('Ctrl+Alt+A');
 
   // Marquee state for long status messages
   let statusEl = $state(null);
@@ -142,7 +144,7 @@
     analyser = null;
   }
 
-  async function startRecording() {
+  async function startRecording(askMode = false) {
     if (isRecording || isStarting || isProcessing) return;
     isStarting = true; // bloquear re-entradas mientras getUserMedia resuelve
     if (!isConfigured) { isStarting = false; ShowSettingsWindow(); return; }
@@ -168,9 +170,10 @@
     mediaRecorder.onstop = handleRecordingStop;
     mediaRecorder.start();
     isRecording = true;
+    isAskMode = askMode;
     isStarting = false;
     EnableCancelHotkey(); // registrar Escape global solo mientras se graba
-    setState('recording', 'Grabando');
+    setState('recording', askMode ? '¿Pregunta?' : 'Grabando');
     await tick(); // esperar a que Svelte monte el canvas
     startWaveform(stream);
   }
@@ -200,24 +203,45 @@
   async function handleRecordingStop() {
     if (isProcessing) return; // guard contra doble ejecución
     isProcessing = true;
-    setState('transcribing', 'Transcribiendo');
+    const wasAskMode = isAskMode;
+    isAskMode = false;
+
+    if (wasAskMode) {
+      setState('transcribing', 'Consultando IA…');
+    } else {
+      setState('transcribing', 'Transcribiendo');
+    }
+
     const blob = new Blob(audioChunks, { type: 'audio/webm' });
     audioChunks = []; // liberar memoria inmediatamente
     const mimeType = blob.type || 'audio/webm';
 
     try {
       const base64 = await blobToBase64(blob);
-      const text = await TranscribeAudio(base64, mimeType);
 
-      if (!text || text.trim() === '') {
-        setState('error', 'Sin resultado');
-        setTimeout(() => setState(null), 3000);
-        return;
+      if (wasAskMode) {
+        // Modo preguntar a IA: mostrar respuesta en ventana flotante
+        const answer = await AskAI(base64, mimeType);
+        if (!answer || answer.trim() === '') {
+          setState('error', 'Sin respuesta');
+          setTimeout(() => setState(null), 3000);
+          return;
+        }
+        await ShowAnswer(answer.trim());
+        setState('done', '¡Listo!');
+        setTimeout(() => setState(null), 2000);
+      } else {
+        // Modo transcripción normal: pegar texto
+        const text = await TranscribeAudio(base64, mimeType);
+        if (!text || text.trim() === '') {
+          setState('error', 'Sin resultado');
+          setTimeout(() => setState(null), 3000);
+          return;
+        }
+        await PasteText(text.trim());
+        setState('done', '¡Pegado!');
+        setTimeout(() => setState(null), 2000);
       }
-
-      await PasteText(text.trim());
-      setState('done', '\u00a1Pegado!');
-      setTimeout(() => setState(null), 2000);
     } catch (err) {
       const msg = (err && err.message) ? err.message : String(err);
       setState('error', msg.length > 30 ? msg.substring(0, 30) + '\u2026' : msg);
@@ -237,7 +261,12 @@
   }
 
   function toggleRecording() {
-    if (isRecording) { stopRecording(); } else { startRecording(); }
+    if (isRecording) { stopRecording(); } else { startRecording(false); }
+  }
+
+  function toggleAskRecording() {
+    if (isRecording && isAskMode) { stopRecording(); }
+    else if (!isRecording) { startRecording(true); }
   }
 
   onMount(() => {
@@ -245,12 +274,14 @@
       isConfigured = !!(s.api_key && s.model);
       if (!isConfigured) setUnconfigured();
       if (s.hotkey && s.hotkey.display) hotkeyDisplay = s.hotkey.display;
+      if (s.ask_hotkey && s.ask_hotkey.display) askHotkeyDisplay = s.ask_hotkey.display;
     }).catch(() => {
       isConfigured = false;
       setUnconfigured();
     });
 
     Events.On('toggle-recording', toggleRecording);
+    Events.On('toggle-ask-recording', toggleAskRecording);
     Events.On('cancel-recording', cancelRecording);
     Events.On('open-settings', () => ShowSettingsWindow());
     Events.On('settings:saved', () => {
@@ -258,6 +289,7 @@
         isConfigured = !!(s.api_key && s.model);
         if (isConfigured) { setState(null, 'Listo'); } else { setUnconfigured(); }
         if (s.hotkey && s.hotkey.display) hotkeyDisplay = s.hotkey.display;
+        if (s.ask_hotkey && s.ask_hotkey.display) askHotkeyDisplay = s.ask_hotkey.display;
       }).catch(() => {});
     });
 

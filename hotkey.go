@@ -14,6 +14,7 @@ const (
 	wmHotkey       = 0x0312
 	hotkeyID       = 1
 	cancelHotkeyID = 2
+	askHotkeyID    = 3
 	vkEscape       = 0x1B
 	pmRemove       = 0x0001
 )
@@ -35,20 +36,24 @@ type HotkeyManager struct {
 	widgetWindow *application.WebviewWindow
 	quit         chan struct{}
 	escQuit      chan struct{} // cancel hotkey goroutine (Escape, only while recording)
+	askQuit      chan struct{} // ask hotkey goroutine
 	mu           sync.Mutex
 	user32       *windows.LazyDLL
 }
 
 // NewHotkeyManager creates a new hotkey manager
 func NewHotkeyManager(app *application.App, widgetWindow *application.WebviewWindow) *HotkeyManager {
-	// escQuit starts pre-closed so StartEscapeListener can detect "not running"
+	// escQuit and askQuit start pre-closed so their Start methods can detect "not running"
 	escQuit := make(chan struct{})
 	close(escQuit)
+	askQuit := make(chan struct{})
+	close(askQuit)
 	return &HotkeyManager{
 		app:          app,
 		widgetWindow: widgetWindow,
 		quit:         make(chan struct{}),
 		escQuit:      escQuit,
+		askQuit:      askQuit,
 		user32:       windows.NewLazySystemDLL("user32.dll"),
 	}
 }
@@ -191,6 +196,87 @@ func (h *HotkeyManager) runEscapeListener(quit <-chan struct{}) {
 
 		if ret != 0 && msg.Message == wmHotkey && msg.WParam == cancelHotkeyID {
 			h.app.Event.Emit("cancel-recording")
+		}
+
+		time.Sleep(30 * time.Millisecond)
+	}
+}
+
+// StartAsk registers the ask hotkey and listens for it. Safe to call multiple times.
+func (h *HotkeyManager) StartAsk(modifiers, vkey uint32) {
+	if modifiers == 0 && vkey == 0 {
+		modifiers = 0x0003 // MOD_CONTROL | MOD_ALT
+		vkey = 0x41        // VK_A
+	}
+	h.mu.Lock()
+	select {
+	case <-h.askQuit:
+		// closed = not running, start a new one
+		h.askQuit = make(chan struct{})
+	default:
+		// open = already running
+		h.mu.Unlock()
+		return
+	}
+	quit := h.askQuit
+	h.mu.Unlock()
+	go h.runAskListener(modifiers, vkey, quit)
+}
+
+// StopAsk stops the ask hotkey listener.
+func (h *HotkeyManager) StopAsk() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	select {
+	case <-h.askQuit:
+		// already stopped
+	default:
+		close(h.askQuit)
+	}
+}
+
+// RestartAsk re-registers the ask hotkey with new parameters.
+func (h *HotkeyManager) RestartAsk(modifiers, vkey uint32) {
+	h.StopAsk()
+	time.Sleep(80 * time.Millisecond)
+	h.mu.Lock()
+	h.askQuit = make(chan struct{})
+	h.mu.Unlock()
+	go h.runAskListener(modifiers, vkey, h.askQuit)
+}
+
+func (h *HotkeyManager) runAskListener(modifiers, vkey uint32, quit <-chan struct{}) {
+	goruntime.LockOSThread()
+	defer goruntime.UnlockOSThread()
+
+	registerHotKey := h.user32.NewProc("RegisterHotKey")
+	unregisterHotKey := h.user32.NewProc("UnregisterHotKey")
+	peekMessage := h.user32.NewProc("PeekMessageW")
+
+	ret, _, _ := registerHotKey.Call(0, askHotkeyID, uintptr(modifiers|0x4000), uintptr(vkey))
+	if ret == 0 {
+		registerHotKey.Call(0, askHotkeyID, uintptr(modifiers), uintptr(vkey))
+	}
+	defer unregisterHotKey.Call(0, askHotkeyID)
+
+	var msg MSG
+	for {
+		select {
+		case <-quit:
+			return
+		default:
+		}
+
+		ret, _, _ := peekMessage.Call(
+			uintptr(unsafe.Pointer(&msg)),
+			0,
+			wmHotkey,
+			wmHotkey,
+			pmRemove,
+		)
+
+		if ret != 0 && msg.Message == wmHotkey && msg.WParam == askHotkeyID {
+			h.app.Event.Emit("toggle-ask-recording")
 		}
 
 		time.Sleep(30 * time.Millisecond)

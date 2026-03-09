@@ -10,31 +10,56 @@
   let model = $state('gemini-2.0-flash');
   let showKey = $state(false);
 
-  // Hotkey state
+  // Hotkey state (recording)
   let hotkeyDisplay = $state('Ctrl+Space');
   let hotkeyModifiers = $state(0x0002);
   let hotkeyVKey = $state(0x20);
   let capturingHotkey = $state(false);
 
+  // Hotkey state (ask IA)
+  let askHotkeyDisplay = $state('Ctrl+Alt+A');
+  let askHotkeyModifiers = $state(0x0003);
+  let askHotkeyVKey = $state(0x41);
+  let capturingAskHotkey = $state(false);
+
   // Appearance state
   let opacity = $state(100);
 
+  // Profiles state
+  let profiles = $state([]);
+  let activeProfileID = $state('');
+  let editingProfileID = $state(null); // ID of profile being edited (null = none)
+
   // Auto-save debounce
   let saveTimer = null;
+
+  function buildSavePayload() {
+    return {
+      api_key: apiKey.trim(),
+      model: model.trim(),
+      hotkey: { modifiers: hotkeyModifiers, vkey: hotkeyVKey, display: hotkeyDisplay },
+      ask_hotkey: { modifiers: askHotkeyModifiers, vkey: askHotkeyVKey, display: askHotkeyDisplay },
+      opacity: opacity,
+      profiles: profiles,
+      active_profile_id: activeProfileID,
+    };
+  }
 
   function scheduleAutoSave() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(async () => {
       if (!apiKey.trim() && !model.trim()) return;
       try {
-        await SaveSettings({
-          api_key: apiKey.trim(),
-          model: model.trim(),
-          hotkey: { modifiers: hotkeyModifiers, vkey: hotkeyVKey, display: hotkeyDisplay },
-          opacity: opacity,
-        });
+        await SaveSettings(buildSavePayload());
       } catch (_) {}
     }, 600);
+  }
+
+  async function saveNow() {
+    clearTimeout(saveTimer);
+    try {
+      await SaveSettings(buildSavePayload());
+    } catch (_) {}
   }
 
   onMount(() => {
@@ -47,7 +72,14 @@
           hotkeyModifiers = s.hotkey.modifiers;
           hotkeyVKey = s.hotkey.vkey;
         }
+        if (s.ask_hotkey && s.ask_hotkey.display) {
+          askHotkeyDisplay = s.ask_hotkey.display;
+          askHotkeyModifiers = s.ask_hotkey.modifiers;
+          askHotkeyVKey = s.ask_hotkey.vkey;
+        }
         opacity = (s.opacity && s.opacity > 0) ? s.opacity : 100;
+        profiles = s.profiles && s.profiles.length > 0 ? s.profiles : [];
+        activeProfileID = s.active_profile_id || (profiles[0]?.id ?? '');
       }).catch(() => {});
     }
 
@@ -58,7 +90,7 @@
   });
 
   function handleGlobalKeyDown(e) {
-    if (!capturingHotkey) return;
+    if (!capturingHotkey && !capturingAskHotkey) return;
     if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
     e.preventDefault();
 
@@ -71,11 +103,41 @@
 
     const keyName = e.key === ' ' ? 'Space' : (e.key.length === 1 ? e.key.toUpperCase() : e.key);
     parts.push(keyName);
+    const display = parts.join('+');
 
-    hotkeyModifiers = mods;
-    hotkeyVKey = e.keyCode;
-    hotkeyDisplay = parts.join('+');
-    capturingHotkey = false;
+    if (capturingHotkey) {
+      hotkeyModifiers = mods;
+      hotkeyVKey = e.keyCode;
+      hotkeyDisplay = display;
+      capturingHotkey = false;
+    } else {
+      askHotkeyModifiers = mods;
+      askHotkeyVKey = e.keyCode;
+      askHotkeyDisplay = display;
+      capturingAskHotkey = false;
+    }
+    scheduleAutoSave();
+  }
+
+  // ── Profile management ──────────────────────────────────────────────────
+  function addProfile() {
+    const id = 'profile_' + Date.now();
+    profiles = [...profiles, { id, name: 'Nuevo perfil', prompt: '' }];
+    editingProfileID = id;
+    activeProfileID = id;
+    scheduleAutoSave();
+  }
+
+  function deleteProfile(id) {
+    if (profiles.length <= 1) return; // keep at least one
+    profiles = profiles.filter(p => p.id !== id);
+    if (activeProfileID === id) activeProfileID = profiles[0].id;
+    if (editingProfileID === id) editingProfileID = null;
+    scheduleAutoSave();
+  }
+
+  function updateProfileField(id, field, value) {
+    profiles = profiles.map(p => p.id === id ? { ...p, [field]: value } : p);
     scheduleAutoSave();
   }
 </script>
@@ -98,6 +160,12 @@
         <button class="nav-item" class:active={activePage === 'home'} onclick={() => activePage = 'home'}>
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
           <span>Home</span>
+        </button>
+      </li>
+      <li>
+        <button class="nav-item" class:active={activePage === 'profiles'} onclick={() => activePage = 'profiles'}>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/></svg>
+          <span>Perfiles</span>
         </button>
       </li>
       <li>
@@ -151,6 +219,75 @@
               <p>Tu API key se guarda localmente, nunca en servidores externos.</p>
             </div>
           </div>
+        </div>
+      </div>
+
+    {:else if activePage === 'profiles'}
+      <div class="page page-profiles">
+        <div class="profiles-header">
+          <div>
+            <h2 class="profiles-title">Perfiles de dictado</h2>
+            <p class="profiles-desc">Cada perfil define el comportamiento de la transcripci&#243;n mediante un prompt personalizado.</p>
+          </div>
+          <button class="btn-add-profile" onclick={addProfile}>&#43; Nuevo perfil</button>
+        </div>
+
+        <div class="profiles-list">
+          {#each profiles as profile (profile.id)}
+            <div class="profile-card" class:active-profile={profile.id === activeProfileID}>
+              <div class="profile-card-top">
+                <div class="profile-name-row">
+                  <input
+                    class="profile-name-input"
+                    type="text"
+                    value={profile.name}
+                    oninput={(e) => updateProfileField(profile.id, 'name', e.target.value)}
+                    placeholder="Nombre del perfil"
+                  />
+                  <div class="profile-actions">
+                    {#if profile.id !== activeProfileID}
+                      <button
+                        class="btn-set-active"
+                        onclick={() => { activeProfileID = profile.id; saveNow(); }}
+                        title="Usar este perfil"
+                      >Activar</button>
+                    {:else}
+                      <span class="badge-active">Activo</span>
+                    {/if}
+                    <button
+                      class="btn-profile-del"
+                      onclick={() => deleteProfile(profile.id)}
+                      title="Eliminar perfil"
+                      disabled={profiles.length <= 1}
+                    >
+                      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  class="btn-expand"
+                  onclick={() => editingProfileID = editingProfileID === profile.id ? null : profile.id}
+                >
+                  {editingProfileID === profile.id ? '▲ Ocultar prompt' : '▼ Editar prompt'}
+                </button>
+              </div>
+
+              {#if editingProfileID === profile.id}
+                <div class="profile-prompt-wrap">
+                  <label class="prompt-label" for="prompt-{profile.id}">Prompt del sistema</label>
+                  <textarea
+                    id="prompt-{profile.id}"
+                    class="profile-prompt"
+                    value={profile.prompt}
+                    oninput={(e) => updateProfileField(profile.id, 'prompt', e.target.value)}
+                    placeholder="Describe c&#243;mo debe procesar el audio. Ej: Transcribe exactamente lo que se dice, en espa&#241;ol..."
+                    rows="5"
+                  ></textarea>
+                </div>
+              {/if}
+            </div>
+          {/each}
         </div>
       </div>
 
@@ -210,12 +347,40 @@
             </div>
             <div class="hotkey-wrap">
               {#if capturingHotkey}
-                <div class="hotkey-capture" onclick={() => capturingHotkey = false}>
+                <div class="hotkey-capture" role="button" tabindex="0"
+                  onclick={() => capturingHotkey = false}
+                  onkeydown={(e) => e.key === 'Enter' && (capturingHotkey = false)}>
                   <span class="capture-hint">Presiona la combinaci&#243;n&#8230;</span>
                 </div>
               {:else}
-                <div class="hotkey-keys" onclick={() => capturingHotkey = true} title="Clic para cambiar">
+                <div class="hotkey-keys" role="button" tabindex="0"
+                  onclick={() => capturingHotkey = true} title="Clic para cambiar"
+                  onkeydown={(e) => e.key === 'Enter' && (capturingHotkey = true)}>
                   {#each hotkeyDisplay.split('+') as part}
+                    <kbd>{part}</kbd>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-title">Preguntar a la IA</span>
+              <span class="setting-desc">Graba una pregunta y obtén respuesta directa</span>
+            </div>
+            <div class="hotkey-wrap">
+              {#if capturingAskHotkey}
+                <div class="hotkey-capture" role="button" tabindex="0"
+                  onclick={() => capturingAskHotkey = false}
+                  onkeydown={(e) => e.key === 'Enter' && (capturingAskHotkey = false)}>
+                  <span class="capture-hint">Presiona la combinaci&#243;n&#8230;</span>
+                </div>
+              {:else}
+                <div class="hotkey-keys" role="button" tabindex="0"
+                  onclick={() => capturingAskHotkey = true} title="Clic para cambiar"
+                  onkeydown={(e) => e.key === 'Enter' && (capturingAskHotkey = true)}>
+                  {#each askHotkeyDisplay.split('+') as part}
                     <kbd>{part}</kbd>
                   {/each}
                 </div>
@@ -393,7 +558,6 @@
     flex-shrink: 0;
     width: 220px;
   }
-  .input-wrap-sm { width: 160px; }
 
   input[type="text"],
   input[type="password"] {
@@ -510,5 +674,170 @@
     color: rgba(0,0,0,0.55);
     min-width: 34px;
     text-align: right;
+  }
+
+  /* Profiles page */
+  .page-profiles { gap: 20px; overflow-y: auto; }
+
+  .profiles-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .profiles-title { font-size: 15px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+  .profiles-desc { font-size: 11.5px; color: rgba(0,0,0,0.40); line-height: 1.5; max-width: 320px; }
+
+  .btn-add-profile {
+    background: #0277bd;
+    color: #fff;
+    border: none;
+    border-radius: 7px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.12s;
+  }
+  .btn-add-profile:hover { background: #0288d1; }
+
+  .profiles-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .profile-card {
+    background: #fff;
+    border: 1px solid rgba(0,0,0,0.10);
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color 0.12s;
+  }
+  .profile-card.active-profile {
+    border-color: rgba(2,119,189,0.45);
+    background: rgba(2,119,189,0.03);
+  }
+
+  .profile-card-top { display: flex; flex-direction: column; gap: 8px; }
+
+  .profile-name-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .profile-name-input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid rgba(0,0,0,0.12);
+    border-radius: 0;
+    color: #1a1a1a;
+    padding: 4px 2px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .profile-name-input:focus { border-bottom-color: #0277bd; }
+
+  .profile-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .btn-set-active {
+    background: none;
+    border: 1px solid rgba(2,119,189,0.40);
+    color: #0277bd;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11.5px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+  }
+  .btn-set-active:hover { background: rgba(2,119,189,0.08); }
+
+  .badge-active {
+    font-size: 11px;
+    font-weight: 600;
+    color: #0277bd;
+    background: rgba(2,119,189,0.10);
+    border-radius: 4px;
+    padding: 3px 8px;
+  }
+
+  .btn-profile-del {
+    background: none;
+    border: none;
+    color: rgba(0,0,0,0.28);
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    border-radius: 5px;
+    transition: color 0.12s, background 0.12s;
+  }
+  .btn-profile-del svg { width: 15px; height: 15px; }
+  .btn-profile-del:hover:not(:disabled) { color: #d32f2f; background: rgba(211,47,47,0.06); }
+  .btn-profile-del:disabled { opacity: 0.25; cursor: not-allowed; }
+
+  .btn-expand {
+    background: none;
+    border: none;
+    color: rgba(0,0,0,0.40);
+    font-size: 11.5px;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 2px 0;
+    text-align: left;
+    transition: color 0.12s;
+  }
+  .btn-expand:hover { color: rgba(0,0,0,0.70); }
+
+  .profile-prompt-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .prompt-label {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: rgba(0,0,0,0.35);
+    letter-spacing: 0.5px;
+  }
+
+  .profile-prompt {
+    width: 100%;
+    background: #f9f9f9;
+    border: 1px solid rgba(0,0,0,0.12);
+    border-radius: 7px;
+    color: #1a1a1a;
+    padding: 9px 11px;
+    font-size: 12px;
+    font-family: inherit;
+    line-height: 1.55;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .profile-prompt:focus {
+    border-color: #0277bd;
+    box-shadow: 0 0 0 3px rgba(2,119,189,0.10);
   }
 </style>

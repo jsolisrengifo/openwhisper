@@ -88,6 +88,31 @@ func main() {
 	})
 	appStruct.settingsWindow = settingsWindow
 
+	askWindow := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:             "ask",
+		Width:            520,
+		Height:           420,
+		MinWidth:         520,
+		MinHeight:        200,
+		MaxWidth:         520,
+		DisableResize:    true,
+		Frameless:        true,
+		AlwaysOnTop:      true,
+		Hidden:           true,
+		BackgroundColour: application.NewRGBA(18, 18, 18, 255),
+		URL:              "/ask.html",
+		Windows: application.WindowsWindow{
+			ExStyle:     0x00010088, // WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_CONTROLPARENT
+			DisableIcon: true,
+		},
+	})
+	// Intercept close: hide instead of destroy
+	askWindow.RegisterHook(events.Windows.WindowClosing, func(e *application.WindowEvent) {
+		e.Cancel()
+		askWindow.Hide()
+	})
+	appStruct.askWindow = askWindow
+
 	settings, err := LoadSettings()
 	if err != nil {
 		s := DefaultSettings()
@@ -115,8 +140,27 @@ func main() {
 		}()
 	})
 
+	// Apply opacity to ask window when it first shows
+	askWindow.RegisterHook(events.Common.WindowShow, func(e *application.WindowEvent) {
+		if appStruct.settings == nil {
+			return
+		}
+		opacityPct := appStruct.settings.Opacity
+		go func() {
+			for i := 0; i < 40; i++ {
+				if uintptr(askWindow.NativeWindow()) != 0 {
+					applyRoundedCorners(uintptr(askWindow.NativeWindow()), 520, 420, 14)
+					applyWindowOpacity(askWindow, opacityPct)
+					return
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+		}()
+	})
+
 	appStruct.hotkey = NewHotkeyManager(wailsApp, widgetWindow)
 	go appStruct.hotkey.Start(settings.Hotkey.Modifiers, settings.Hotkey.VKey)
+	appStruct.hotkey.StartAsk(settings.AskHotkey.Modifiers, settings.AskHotkey.VKey)
 
 	startTray(wailsApp, widgetWindow)
 

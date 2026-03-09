@@ -7,6 +7,51 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
+ * DictationProfile defines a named transcription mode with a custom prompt.
+ */
+export class DictationProfile {
+    /**
+     * Creates a new DictationProfile instance.
+     * @param {Partial<DictationProfile>} [$$source = {}] - The source object to create the DictationProfile.
+     */
+    constructor($$source = {}) {
+        if (!("id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["id"] = "";
+        }
+        if (!("name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["name"] = "";
+        }
+        if (!("prompt" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["prompt"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DictationProfile instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {DictationProfile}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new DictationProfile(/** @type {Partial<DictationProfile>} */($$parsedSource));
+    }
+}
+
+/**
  * HotkeyConfig stores a global keyboard shortcut definition.
  */
 export class HotkeyConfig {
@@ -92,7 +137,28 @@ export class Settings {
              * @member
              * @type {number}
              */
-            this["opacity"] = 100;
+            this["opacity"] = 0;
+        }
+        if (!("profiles" in $$source)) {
+            /**
+             * @member
+             * @type {DictationProfile[]}
+             */
+            this["profiles"] = [];
+        }
+        if (!("active_profile_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["active_profile_id"] = "";
+        }
+        if (!("ask_hotkey" in $$source)) {
+            /**
+             * @member
+             * @type {HotkeyConfig}
+             */
+            this["ask_hotkey"] = (new HotkeyConfig());
         }
 
         Object.assign(this, $$source);
@@ -105,9 +171,17 @@ export class Settings {
      */
     static createFrom($$source = {}) {
         const $$createField2_0 = $$createType0;
+        const $$createField4_0 = $$createType2;
+        const $$createField6_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("hotkey" in $$parsedSource) {
             $$parsedSource["hotkey"] = $$createField2_0($$parsedSource["hotkey"]);
+        }
+        if ("profiles" in $$parsedSource) {
+            $$parsedSource["profiles"] = $$createField4_0($$parsedSource["profiles"]);
+        }
+        if ("ask_hotkey" in $$parsedSource) {
+            $$parsedSource["ask_hotkey"] = $$createField6_0($$parsedSource["ask_hotkey"]);
         }
         return new Settings(/** @type {Partial<Settings>} */($$parsedSource));
     }
@@ -115,3 +189,5 @@ export class Settings {
 
 // Private type creation functions
 const $$createType0 = HotkeyConfig.createFrom;
+const $$createType1 = DictationProfile.createFrom;
+const $$createType2 = $Create.Array($$createType1);
