@@ -1,6 +1,6 @@
 # OpenWhisper
 
-A lightweight, always-on-top floating dictation app. Press **Ctrl+Space** (or click the mic button) to record your voice, and OpenWhisper will transcribe it using the **Gemini API** and automatically paste the result wherever your cursor is. Press **Ctrl+Shift+Space** to ask a question directly to the AI and get the answer in a floating response window.
+A lightweight, always-on-top floating dictation app. Press **Ctrl+Space** (or click the mic button) to record your voice, and OpenWhisper will transcribe it using your chosen AI provider and automatically paste the result wherever your cursor is. Press **Ctrl+Shift+Space** to ask a question directly to the AI and get the answer in a floating response window.
 
 Built with [Go](https://go.dev/) + [Wails v3](https://v3.wails.io/)
 
@@ -9,22 +9,23 @@ Built with [Go](https://go.dev/) + [Wails v3](https://v3.wails.io/)
 ## Features
 
 - **Global hotkey**  `Ctrl+Space` starts/stops recording from any app
-- **Ask AI hotkey**  `Ctrl+Alt+A` records a spoken question and shows the AI answer in a floating window
+- **Ask AI hotkey**  `Ctrl+Shift+Space` records a spoken question and shows the AI answer in a floating window
+- **In-situ editing**  select text before pressing the Ask hotkey to use it as context — the AI edits or answers in relation to that text
+- **Multi-provider**  switch between **Google Gemini** and **OpenRouter** (100+ models); each provider stores its own API key and last-used model independently
 - **Dictation profiles**  create multiple named profiles, each with a custom prompt — switch the active profile at any time
 - **Auto-paste**  transcribed text is pasted directly at your cursor position
 - **Always on top**  frameless floating window, stays visible over other apps
-- **Gemini-powered**  uses Google Gemini API for high-quality transcription and Q&A
 - **Minimal UI**  compact widget window, dark theme, no distractions
-- **Secure credential storage**  API key stored in the OS native keyring, never in plain text
+- **Secure credential storage**  API keys stored in the OS native keyring, never in plain text
 - **Live configuration refresh**  the widget updates instantly when settings are saved
 
 ---
 
 ## Requirements
 
-- Windows 10/11 (macOS and Linux also supported)
-- [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (pre-installed on Windows 11; Windows only)
-- A [Google Gemini API key](https://aistudio.google.com/app/apikey)
+- Windows 10/11
+- [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (pre-installed on Windows 11)
+- An API key for at least one supported provider (see [Configuration](#configuration))
 
 ---
 
@@ -54,16 +55,28 @@ The compiled `.exe` will be placed in `build/bin/`.
 
 ## Configuration
 
-OpenWhisper requires two fields to operate. If either is missing when the app starts, the status bar will show **⚙ Config. pendiente** and recording will be blocked until configuration is complete.
+OpenWhisper requires an API key and a model to operate. If either is missing when the app starts, the status bar will show **⚙ Config. pendiente** and recording will be blocked until configuration is complete.
 
 Click the **⚙** button to open settings:
 
-### API / Model (Configuración tab)
+### Provider & API Key (Configuración tab)
 
-| Field | Description |
-|-------|-------------|
-| **API Key** | Your Google Gemini API key (e.g. `AIzaSy...`) |
-| **Model** | Any compatible Gemini model name (e.g. `gemini-2.0-flash`) |
+OpenWhisper supports two AI providers. Use the **Proveedor** dropdown to switch between them.
+
+| Provider | API Key source | Notes |
+|----------|---------------|-------|
+| **Google Gemini** | [Google AI Studio](https://aistudio.google.com/app/apikey) | Supports audio directly; free tier: 20 req/min |
+| **OpenRouter** | [openrouter.ai/keys](https://openrouter.ai/keys) | Proxies 100+ models via OpenAI-compatible API; model must support audio input |
+
+Each provider stores its API key and last-used model independently — switching providers does not overwrite the other provider's settings.
+
+### Model
+
+Enter any model name compatible with the selected provider, e.g.:
+- Gemini: `gemini-2.5-flash-lite`, `gemini-2.0-flash`
+- OpenRouter: `google/gemini-2.0-flash-001`, `openai/gpt-4o-audio-preview`
+
+> **Note for OpenRouter:** not all models accept raw audio input. Choose a model that explicitly supports audio (`input_audio`) or multimodal content; otherwise the API will return a "No endpoints found that support input audio" error.
 
 ### Keyboard shortcuts (Configuración tab)
 
@@ -91,10 +104,10 @@ Settings are auto-saved 600 ms after the last change. The widget refreshes immed
 
 | Data | Location |
 |------|----------|
-| Model, hotkeys, profiles | `%APPDATA%\openwhisper\config.json` (Windows) / `~/.config/openwhisper/config.json` (Linux) / `~/Library/Application Support/openwhisper/config.json` (macOS) |
-| **API Key** | **OS native keyring** — Windows Credential Manager / macOS Keychain / Linux Secret Service |
+| Model, provider, hotkeys, profiles | `%APPDATA%\openwhisper\config.json` |
+| **API Keys** | **OS native keyring** — Windows Credential Manager |
 
-> **Security note:** The API key is never written to `config.json`. It is stored exclusively in the operating system's secure credential store, isolated from the file system and inaccessible to other user processes without explicit authorization.
+> **Security note:** API keys are never written to `config.json`. They are stored exclusively in the operating system's secure credential store, isolated from the file system and inaccessible to other user processes without explicit authorization.
 
 ---
 
@@ -104,7 +117,6 @@ Settings are auto-saved 600 ms after the last change. The widget refreshes immed
 - [Wails CLI v3](https://v3.wails.io/): `go install github.com/wailsapp/wails/v3/cmd/wails3@latest`
 - [Task](https://taskfile.dev/) (task runner): `go install github.com/go-task/task/v3/cmd/task@latest`
 - Node.js 18+ (for frontend tooling)
-- **Linux only:** a running `gnome-keyring` or compatible Secret Service daemon
 
 ### Install frontend dependencies
 
@@ -117,14 +129,15 @@ npm install
 
 ## Regenerating Bindings
 
-If Go functions exposed to the frontend change, regenerate the JS bindings and copy them to `frontend/src/bindings/`:
+The JS bindings in `frontend/bindings/` are auto-generated from the Go service layer. They are regenerated automatically as part of the build pipeline (`wails3 task build`).
+
+To regenerate them manually:
 
 ```bash
-wails3 generate bindings openwhisper
-# Then copy the generated files to the correct location:
-Copy-Item frontend/bindings/openwhisper/* frontend/src/bindings/openwhisper/ -Force
-Remove-Item -Recurse -Force frontend/bindings
+wails3 generate bindings -d frontend/bindings
 ```
+
+> `frontend/bindings/` is listed in `.gitignore` — do not commit it.
 
 ---
 
@@ -137,8 +150,8 @@ Remove-Item -Recurse -Force frontend/bindings
 | Frontend | [Svelte 5](https://svelte.dev/) + Vite 5 |
 | Runtime bridge | [@wailsio/runtime](https://www.npmjs.com/package/@wailsio/runtime) |
 | Renderer | WebView2 (Chromium) |
-| Transcription / Q&A | Google Gemini API |
-| Credential storage | [go-keyring](https://github.com/zalando/go-keyring) (WCM / Keychain / Secret Service) |
+| Transcription / Q&A | Google Gemini API / OpenRouter API |
+| Credential storage | [go-keyring](https://github.com/zalando/go-keyring) (Windows Credential Manager) |
 | Global hotkeys | Windows `RegisterHotKey` API |
 | Auto-paste | Windows `keybd_event` API |
 | Task runner | [Task](https://taskfile.dev/) |

@@ -6,6 +6,11 @@ vars:
   VITE_PORT: '{{.VITE_PORT | default "9245"}}'
 
 tasks:
+  generate:bindings:
+    summary: Generate Wails JS/TS bindings from Go code
+    cmds:
+      - wails3 generate bindings -d frontend/bindings
+
   install:frontend:deps:
     summary: Install frontend dependencies
     dir: frontend
@@ -22,6 +27,7 @@ tasks:
     dir: frontend
     deps:
       - task: install:frontend:deps
+      - task: generate:bindings
     cmds:
       - npm run build:dev
 

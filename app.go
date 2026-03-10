@@ -16,6 +16,18 @@ type App struct {
 	askWindow      *application.WebviewWindow
 	settings       *Settings
 	hotkey         *HotkeyManager
+
+	// Ask AI context capture — set by setupAskContextCapture, consumed by AskAI
+	pendingContextText string
+
+	// isAskActive is true between the first hotkey press (start recording) and AskAI completion.
+	// Used to distinguish the start press (capture context) from the stop press (skip capture).
+	isAskActive bool
+
+	// Last Ask AI request — used by RegenerateAsk
+	lastAskAudio   string
+	lastAskMime    string
+	lastAskContext string // non-empty when last ask was an in-situ edit
 }
 
 // NewApp creates a new App application struct
@@ -57,7 +69,7 @@ func (a *App) TranscribeAudio(base64Audio string, mimeType string) (string, erro
 
 	logger.Debug("TranscribeAudio: starting", "mimeType", mimeType, "profile", a.settings.ActiveProfileID)
 	start := time.Now()
-	result, err := transcribeAudio(base64Audio, mimeType, a.settings.APIKey, a.settings.Model, prompt)
+	result, err := transcribeAudio(base64Audio, mimeType, a.settings.APIKey, a.settings.Model, prompt, a.settings.Provider)
 	if err != nil {
 		logger.Error("TranscribeAudio: failed", "err", err, "elapsed", time.Since(start).String())
 		return "", err
@@ -66,6 +78,7 @@ func (a *App) TranscribeAudio(base64Audio string, mimeType string) (string, erro
 }
 
 // AskAI sends audio to Gemini and returns an AI-generated answer (not a transcription).
+// If text was selected before the hotkey was pressed, it is used as in-situ editing context.
 func (a *App) AskAI(base64Audio string, mimeType string) (string, error) {
 	if a.settings == nil || a.settings.APIKey == "" {
 		logger.Warn("AskAI: no API key configured")
@@ -76,14 +89,114 @@ func (a *App) AskAI(base64Audio string, mimeType string) (string, error) {
 		logger.Warn("AskAI: empty audio received")
 		return "", fmt.Errorf("no se recibió audio")
 	}
-	logger.Debug("AskAI: starting", "mimeType", mimeType)
+
+	// Consume any pending clipboard context captured by setupAskContextCapture
+	ctxText := a.pendingContextText
+	a.pendingContextText = ""
+	a.isAskActive = false // recording is done, ready for next ask
+
+	// Persist for RegenerateAsk
+	a.lastAskAudio = base64Audio
+	a.lastAskMime = mimeType
+	a.lastAskContext = ctxText
+
+	logger.Debug("AskAI: starting", "mimeType", mimeType, "hasContext", ctxText != "")
 	start := time.Now()
-	result, err := askQuestion(base64Audio, mimeType, a.settings.APIKey, a.settings.Model)
+
+	var result string
+	var err error
+	if ctxText != "" {
+		result, err = editTextWithAudio(base64Audio, mimeType, a.settings.APIKey, a.settings.Model, ctxText, a.settings.Provider)
+	} else {
+		result, err = askQuestion(base64Audio, mimeType, a.settings.APIKey, a.settings.Model, a.settings.Provider)
+	}
 	if err != nil {
 		logger.Error("AskAI: failed", "err", err, "elapsed", time.Since(start).String())
 		return "", err
 	}
 	return result, nil
+}
+
+// RegenerateAsk re-sends the last AskAI request without re-recording.
+func (a *App) RegenerateAsk() (string, error) {
+	if a.settings == nil || a.settings.APIKey == "" {
+		return "", fmt.Errorf("API key no configurada")
+	}
+	if a.lastAskAudio == "" {
+		return "", fmt.Errorf("no hay una consulta previa para regenerar")
+	}
+	logger.Debug("RegenerateAsk: re-sending last ask", "hasContext", a.lastAskContext != "")
+	start := time.Now()
+	var result string
+	var err error
+	if a.lastAskContext != "" {
+		result, err = editTextWithAudio(a.lastAskAudio, a.lastAskMime, a.settings.APIKey, a.settings.Model, a.lastAskContext, a.settings.Provider)
+	} else {
+		result, err = askQuestion(a.lastAskAudio, a.lastAskMime, a.settings.APIKey, a.settings.Model, a.settings.Provider)
+	}
+	if err != nil {
+		logger.Error("RegenerateAsk: failed", "err", err, "elapsed", time.Since(start).String())
+		return "", err
+	}
+	return result, nil
+}
+
+// GetAPIKeyForProvider loads the stored API key for the given provider from the OS keyring.
+// Called by the frontend when the user switches providers in settings.
+func (a *App) GetAPIKeyForProvider(provider string) (string, error) {
+	return loadAPIKey(provider)
+}
+
+// CopyText places text on the clipboard without simulating Ctrl+V.
+func (a *App) CopyText(text string) {
+	a.app.Clipboard.SetText(text)
+}
+
+// AskFollowUp sends a follow-up audio question with the full conversation history.
+func (a *App) AskFollowUp(base64Audio string, mimeType string, history []ChatTurn) (string, error) {
+	if a.settings == nil || a.settings.APIKey == "" {
+		return "", fmt.Errorf("API key no configurada")
+	}
+	if base64Audio == "" {
+		return "", fmt.Errorf("no se recibió audio")
+	}
+	logger.Debug("AskFollowUp: starting", "mimeType", mimeType, "historyLen", len(history))
+	start := time.Now()
+	result, err := continueChat(base64Audio, mimeType, a.settings.APIKey, a.settings.Model, history, a.settings.Provider)
+	if err != nil {
+		logger.Error("AskFollowUp: failed", "err", err, "elapsed", time.Since(start).String())
+		return "", err
+	}
+	return result, nil
+}
+
+// setupAskContextCapture assigns an OnBeforeAsk hook to the hotkey manager.
+// When the ask hotkey fires to START recording, it simulates Ctrl+C and captures
+// any newly-copied text as context for the AI. On the STOP press it skips capture
+// to avoid overwriting the context that was already saved.
+func (a *App) setupAskContextCapture() {
+	if a.hotkey == nil {
+		return
+	}
+	a.hotkey.OnBeforeAsk = func() {
+		if a.isAskActive {
+			// Second press = stop recording — don't touch pendingContextText.
+			// isAskActive is reset by AskAI when it consumes the result.
+			return
+		}
+		// First press = start recording — capture any selected text via Ctrl+C.
+		a.isAskActive = true
+		prev, _ := readClipboardText()
+		_ = copyViaKeyboard()
+		time.Sleep(200 * time.Millisecond)
+		after, _ := readClipboardText()
+		if after != "" && after != prev {
+			a.pendingContextText = after
+			logger.Debug("setupAskContextCapture: captured selection", "chars", len(after))
+		} else {
+			a.pendingContextText = ""
+		}
+	}
 }
 
 // ShowAnswer displays the AI answer in the floating ask window.

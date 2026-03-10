@@ -1,8 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
-  import { TranscribeAudio, AskAI, ShowAnswer, PasteText, ShowSettingsWindow, HideWindow, GetSettings, EnableCancelHotkey, DisableCancelHotkey } from './bindings/openwhisper/app.js';
+  import { TranscribeAudio, AskAI, ShowAnswer, PasteText, ShowSettingsWindow, HideWindow, GetSettings, EnableCancelHotkey, DisableCancelHotkey } from '../bindings/openwhisper/app.js';
   import { Events } from '@wailsio/runtime';
-
   // Non-reactive internal state
   let mediaRecorder = null;
   let audioChunks = [];
@@ -172,6 +171,7 @@
     isRecording = true;
     isAskMode = askMode;
     isStarting = false;
+    if (askMode) Events.Emit('ask:new-chat'); // limpiar historial previo en Ask.svelte
     EnableCancelHotkey(); // registrar Escape global solo mientras se graba
     setState('recording', askMode ? '¿Pregunta?' : 'Grabando');
     await tick(); // esperar a que Svelte monte el canvas
@@ -280,11 +280,11 @@
       setUnconfigured();
     });
 
-    Events.On('toggle-recording', toggleRecording);
-    Events.On('toggle-ask-recording', toggleAskRecording);
-    Events.On('cancel-recording', cancelRecording);
-    Events.On('open-settings', () => ShowSettingsWindow());
-    Events.On('settings:saved', () => {
+    const cancelToggleRecording    = Events.On('toggle-recording', toggleRecording);
+    const cancelToggleAskRecording  = Events.On('toggle-ask-recording', toggleAskRecording);
+    const cancelCancelRecording     = Events.On('cancel-recording', cancelRecording);
+    const cancelOpenSettings        = Events.On('open-settings', () => ShowSettingsWindow());
+    const cancelSettingsSaved       = Events.On('settings:saved', () => {
       GetSettings().then(s => {
         isConfigured = !!(s.api_key && s.model);
         if (isConfigured) { setState(null, 'Listo'); } else { setUnconfigured(); }
@@ -293,7 +293,13 @@
       }).catch(() => {});
     });
 
-    return () => {};
+    return () => {
+      cancelToggleRecording();
+      cancelToggleAskRecording();
+      cancelCancelRecording();
+      cancelOpenSettings();
+      cancelSettingsSaved();
+    };
   });
 </script>
 

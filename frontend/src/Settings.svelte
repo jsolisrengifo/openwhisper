@@ -1,6 +1,6 @@
 ﻿<script>
   import { onMount } from 'svelte';
-  import { GetSettings, SaveSettings, HideSettingsWindow } from './bindings/openwhisper/app.js';
+  import { GetSettings, SaveSettings, HideSettingsWindow, GetAPIKeyForProvider } from '../bindings/openwhisper/app.js';
   import { Events } from '@wailsio/runtime';
 
   let activePage = $state('home');
@@ -8,7 +8,29 @@
   // Config state
   let apiKey = $state('');
   let model = $state('gemini-2.0-flash');
+  let provider = $state('gemini');
+  let modelByProvider = $state({});
   let showKey = $state(false);
+
+  const providerDefaults = {
+    gemini: { model: 'gemini-2.0-flash', placeholder: 'AIza...', modelDesc: 'Ej: gemini-2.0-flash, gemini-2.5-flash-lite' },
+    openrouter: { model: 'openai/gpt-4o-audio-preview', placeholder: 'sk-or-...', modelDesc: 'Ej: openai/gpt-4o-audio-preview, google/gemini-2.0-flash-001' },
+  };
+
+  async function handleProviderChange(newProvider) {
+    // Persist current model for the outgoing provider
+    modelByProvider = { ...modelByProvider, [provider]: model };
+    provider = newProvider;
+    // Restore model for the incoming provider
+    model = modelByProvider[newProvider] || providerDefaults[newProvider]?.model || '';
+    // Load the stored key for this provider (may be empty if not set yet)
+    try {
+      apiKey = await GetAPIKeyForProvider(newProvider) || '';
+    } catch (_) {
+      apiKey = '';
+    }
+    scheduleAutoSave();
+  }
 
   // Hotkey state (recording)
   let hotkeyDisplay = $state('Ctrl+Space');
@@ -34,9 +56,13 @@
   let saveTimer = null;
 
   function buildSavePayload() {
+    // Keep the map in sync with the current model before saving
+    const updatedMap = { ...modelByProvider, [provider]: model.trim() };
     return {
       api_key: apiKey.trim(),
       model: model.trim(),
+      provider: provider,
+      model_by_provider: updatedMap,
       hotkey: { modifiers: hotkeyModifiers, vkey: hotkeyVKey, display: hotkeyDisplay },
       ask_hotkey: { modifiers: askHotkeyModifiers, vkey: askHotkeyVKey, display: askHotkeyDisplay },
       opacity: opacity,
@@ -65,8 +91,10 @@
   onMount(() => {
     function loadSettings() {
       GetSettings().then(s => {
+        provider = s.provider || 'gemini';
+        modelByProvider = s.model_by_provider || {};
         apiKey = s.api_key || '';
-        model = s.model || 'gemini-2.0-flash';
+        model = s.model || modelByProvider[provider] || providerDefaults[provider]?.model || 'gemini-2.0-flash';
         if (s.hotkey && s.hotkey.display) {
           hotkeyDisplay = s.hotkey.display;
           hotkeyModifiers = s.hotkey.modifiers;
@@ -295,19 +323,36 @@
       <div class="page page-config">
 
         <div class="section-group">
-          <p class="group-label">API DE GEMINI</p>
+          <p class="group-label">PROVEEDOR DE IA</p>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-title">Proveedor</span>
+              <span class="setting-desc">Gemini usa tu cuota de Google; OpenRouter permite modelos alternativos</span>
+            </div>
+            <div class="input-wrap">
+              <select
+                class="provider-select"
+                value={provider}
+                onchange={(e) => handleProviderChange(e.target.value)}
+              >
+                <option value="gemini">Gemini (Google)</option>
+                <option value="openrouter">OpenRouter</option>
+              </select>
+            </div>
+          </div>
 
           <div class="setting-row">
             <div class="setting-info">
               <span class="setting-title">API Key</span>
-              <span class="setting-desc">Obt&#233;n tu clave en Google AI Studio</span>
+              <span class="setting-desc">{provider === 'openrouter' ? 'Obt\u00e9n tu clave en openrouter.ai' : 'Obt\u00e9n tu clave en Google AI Studio'}</span>
             </div>
             <div class="input-wrap">
               <input
                 type={showKey ? 'text' : 'password'}
                 bind:value={apiKey}
                 oninput={scheduleAutoSave}
-                placeholder="AIza..."
+                placeholder={providerDefaults[provider]?.placeholder ?? 'API Key...'}
                 autocomplete="off"
                 spellcheck="false"
               />
@@ -324,14 +369,14 @@
           <div class="setting-row">
             <div class="setting-info">
               <span class="setting-title">Modelo</span>
-              <span class="setting-desc">Ej: gemini-2.0-flash, gemini-1.5-pro</span>
+              <span class="setting-desc">{providerDefaults[provider]?.modelDesc ?? 'Nombre del modelo'}</span>
             </div>
             <div class="input-wrap">
               <input
                 type="text"
                 bind:value={model}
                 oninput={scheduleAutoSave}
-                placeholder="gemini-2.0-flash"
+                placeholder={providerDefaults[provider]?.model ?? 'modelo'}
               />
             </div>
           </div>
@@ -560,7 +605,8 @@
   }
 
   input[type="text"],
-  input[type="password"] {
+  input[type="password"],
+  select.provider-select {
     flex: 1;
     min-width: 0;
     background: #fff;
@@ -573,7 +619,12 @@
     font-family: inherit;
     transition: border-color 0.15s, box-shadow 0.15s;
   }
-  input:focus {
+  select.provider-select {
+    cursor: pointer;
+    appearance: auto;
+  }
+  input:focus,
+  select.provider-select:focus {
     border-color: #0277bd;
     box-shadow: 0 0 0 3px rgba(2,119,189,0.12);
   }

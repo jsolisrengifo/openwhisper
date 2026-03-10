@@ -4,6 +4,9 @@ build/bin/
 # Frontend build output
 frontend/dist/
 
+# Wails generated bindings (auto-generated, do not commit)
+frontend/bindings/
+
 # Dependencias de Node
 node_modules/
 frontend/node_modules/

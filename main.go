@@ -159,6 +159,7 @@ func main() {
 	})
 
 	appStruct.hotkey = NewHotkeyManager(wailsApp, widgetWindow)
+	appStruct.setupAskContextCapture()
 	go appStruct.hotkey.Start(settings.Hotkey.Modifiers, settings.Hotkey.VKey)
 	appStruct.hotkey.StartAsk(settings.AskHotkey.Modifiers, settings.AskHotkey.VKey)
 

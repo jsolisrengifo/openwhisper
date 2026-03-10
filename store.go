@@ -10,9 +10,17 @@ import (
 )
 
 const (
-	keyringSvc  = "openwhisper"
-	keyringUser = "gemini_api_key"
+	keyringSvc = "openwhisper"
 )
+
+// keyringUserForProvider returns the keyring username for the given provider.
+// "gemini" maps to the legacy key so existing stored keys still work.
+func keyringUserForProvider(provider string) string {
+	if provider == "openrouter" {
+		return "openrouter_api_key"
+	}
+	return "gemini_api_key"
+}
 
 // HotkeyConfig stores a global keyboard shortcut definition.
 type HotkeyConfig struct {
@@ -33,6 +41,8 @@ type DictationProfile struct {
 type Settings struct {
 	APIKey          string             `json:"api_key,omitempty"` // Only in memory / transmitted to UI; never written to disk
 	Model           string             `json:"model"`
+	Provider        string             `json:"provider"`                    // "gemini" or "openrouter"
+	ModelByProvider map[string]string  `json:"model_by_provider,omitempty"` // Per-provider model memory
 	Hotkey          HotkeyConfig       `json:"hotkey"`
 	Opacity         int                `json:"opacity"` // Widget window opacity: 10–100 (percent)
 	Profiles        []DictationProfile `json:"profiles"`
@@ -44,6 +54,8 @@ type Settings struct {
 // The API key is intentionally absent.
 type diskSettings struct {
 	Model           string             `json:"model"`
+	Provider        string             `json:"provider"`
+	ModelByProvider map[string]string  `json:"model_by_provider,omitempty"`
 	Hotkey          HotkeyConfig       `json:"hotkey"`
 	Opacity         int                `json:"opacity"`
 	Profiles        []DictationProfile `json:"profiles"`
@@ -91,23 +103,24 @@ func settingsPath() (string, error) {
 	return filepath.Join(configDir, "openwhisper", "config.json"), nil
 }
 
-// saveAPIKey stores the API key in the OS keyring.
+// saveAPIKey stores the API key for the given provider in the OS keyring.
 // If key is empty the existing entry is deleted (best-effort).
-func saveAPIKey(key string) error {
+func saveAPIKey(key, provider string) error {
+	user := keyringUserForProvider(provider)
 	if key == "" {
-		err := keyring.Delete(keyringSvc, keyringUser)
+		err := keyring.Delete(keyringSvc, user)
 		if err != nil && !errors.Is(err, keyring.ErrNotFound) {
 			return err
 		}
 		return nil
 	}
-	return keyring.Set(keyringSvc, keyringUser, key)
+	return keyring.Set(keyringSvc, user, key)
 }
 
-// loadAPIKey retrieves the API key from the OS keyring.
+// loadAPIKey retrieves the API key for the given provider from the OS keyring.
 // Returns ("", nil) when no key has been stored yet.
-func loadAPIKey() (string, error) {
-	val, err := keyring.Get(keyringSvc, keyringUser)
+func loadAPIKey(provider string) (string, error) {
+	val, err := keyring.Get(keyringSvc, keyringUserForProvider(provider))
 	if err != nil {
 		if errors.Is(err, keyring.ErrNotFound) {
 			return "", nil
@@ -141,11 +154,24 @@ func LoadSettings() (*Settings, error) {
 
 	s := Settings{
 		Model:           d.Model,
+		Provider:        d.Provider,
+		ModelByProvider: d.ModelByProvider,
 		Hotkey:          d.Hotkey,
 		Opacity:         d.Opacity,
 		Profiles:        d.Profiles,
 		ActiveProfileID: d.ActiveProfileID,
 		AskHotkey:       d.AskHotkey,
+	}
+	// Migrate: default provider when upgrading from older config
+	if s.Provider == "" {
+		s.Provider = "gemini"
+	}
+	if s.ModelByProvider == nil {
+		s.ModelByProvider = make(map[string]string)
+	}
+	// Restore the model for the active provider if stored
+	if m, ok := s.ModelByProvider[s.Provider]; ok && m != "" {
+		s.Model = m
 	}
 	if s.Opacity == 0 {
 		s.Opacity = 100
@@ -167,8 +193,8 @@ func LoadSettings() (*Settings, error) {
 		}
 	}
 
-	// Load the API key from the secure keyring (best-effort: empty on error)
-	s.APIKey, _ = loadAPIKey()
+	// Load the API key for the active provider from the secure keyring (best-effort: empty on error)
+	s.APIKey, _ = loadAPIKey(s.Provider)
 
 	return &s, nil
 }
@@ -176,8 +202,8 @@ func LoadSettings() (*Settings, error) {
 // saveSettings persists non-sensitive settings to disk and stores the API key
 // in the OS native keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service).
 func saveSettings(s Settings) error {
-	// 1. Persist the API key securely
-	if err := saveAPIKey(s.APIKey); err != nil {
+	// 1. Persist the API key securely under the active provider's keyring slot
+	if err := saveAPIKey(s.APIKey, s.Provider); err != nil {
 		return err
 	}
 
@@ -191,8 +217,18 @@ func saveSettings(s Settings) error {
 		return err
 	}
 
+	// Keep the per-provider model map in sync
+	if s.ModelByProvider == nil {
+		s.ModelByProvider = make(map[string]string)
+	}
+	if s.Model != "" && s.Provider != "" {
+		s.ModelByProvider[s.Provider] = s.Model
+	}
+
 	d := diskSettings{
 		Model:           s.Model,
+		Provider:        s.Provider,
+		ModelByProvider: s.ModelByProvider,
 		Hotkey:          s.Hotkey,
 		Opacity:         s.Opacity,
 		Profiles:        s.Profiles,

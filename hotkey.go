@@ -39,6 +39,9 @@ type HotkeyManager struct {
 	askQuit      chan struct{} // ask hotkey goroutine
 	mu           sync.Mutex
 	user32       *windows.LazyDLL
+	// OnBeforeAsk is called synchronously before the ask-recording event is emitted.
+	// Use it to capture any pre-recording context (e.g., clipboard text).
+	OnBeforeAsk func()
 }
 
 // NewHotkeyManager creates a new hotkey manager
@@ -276,6 +279,9 @@ func (h *HotkeyManager) runAskListener(modifiers, vkey uint32, quit <-chan struc
 		)
 
 		if ret != 0 && msg.Message == wmHotkey && msg.WParam == askHotkeyID {
+			if h.OnBeforeAsk != nil {
+				h.OnBeforeAsk()
+			}
 			h.app.Event.Emit("toggle-ask-recording")
 		}
 
