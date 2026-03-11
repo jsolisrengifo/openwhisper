@@ -39,28 +39,33 @@ type DictationProfile struct {
 // Settings holds the app configuration.
 // APIKey is NOT persisted in the JSON file; it lives in the OS keyring.
 type Settings struct {
-	APIKey          string             `json:"api_key,omitempty"` // Only in memory / transmitted to UI; never written to disk
-	Model           string             `json:"model"`
-	Provider        string             `json:"provider"`                    // "gemini" or "openrouter"
-	ModelByProvider map[string]string  `json:"model_by_provider,omitempty"` // Per-provider model memory
-	Hotkey          HotkeyConfig       `json:"hotkey"`
-	Opacity         int                `json:"opacity"` // Widget window opacity: 10–100 (percent)
-	Profiles        []DictationProfile `json:"profiles"`
-	ActiveProfileID string             `json:"active_profile_id"`
-	AskHotkey       HotkeyConfig       `json:"ask_hotkey"`
+	APIKey           string              `json:"api_key,omitempty"`            // Only in memory / transmitted to UI; never written to disk
+	Model            string              `json:"model,omitempty"`              // Derived from Models[0]; kept for migration compat only
+	Models           []string            `json:"models"`                       // Ordered list of models to try (fallback left-to-right)
+	Provider         string              `json:"provider"`                     // "gemini" or "openrouter"
+	ModelByProvider  map[string]string   `json:"model_by_provider,omitempty"`  // Legacy per-provider map; kept for migration
+	ModelsByProvider map[string][]string `json:"models_by_provider,omitempty"` // Per-provider model lists
+	Hotkey           HotkeyConfig        `json:"hotkey"`
+	Opacity          int                 `json:"opacity"` // Widget window opacity: 10–100 (percent)
+	Profiles         []DictationProfile  `json:"profiles"`
+	ActiveProfileID  string              `json:"active_profile_id"`
+	AskHotkey        HotkeyConfig        `json:"ask_hotkey"`
 }
 
 // diskSettings is the representation written to config.json.
 // The API key is intentionally absent.
+// Legacy fields (Model, ModelByProvider) are kept for reading old configs; new fields are canonical.
 type diskSettings struct {
-	Model           string             `json:"model"`
-	Provider        string             `json:"provider"`
-	ModelByProvider map[string]string  `json:"model_by_provider,omitempty"`
-	Hotkey          HotkeyConfig       `json:"hotkey"`
-	Opacity         int                `json:"opacity"`
-	Profiles        []DictationProfile `json:"profiles"`
-	ActiveProfileID string             `json:"active_profile_id"`
-	AskHotkey       HotkeyConfig       `json:"ask_hotkey"`
+	Model            string              `json:"model,omitempty"` // Legacy; read only for migration
+	Models           []string            `json:"models,omitempty"`
+	Provider         string              `json:"provider"`
+	ModelByProvider  map[string]string   `json:"model_by_provider,omitempty"` // Legacy; read only for migration
+	ModelsByProvider map[string][]string `json:"models_by_provider,omitempty"`
+	Hotkey           HotkeyConfig        `json:"hotkey"`
+	Opacity          int                 `json:"opacity"`
+	Profiles         []DictationProfile  `json:"profiles"`
+	ActiveProfileID  string              `json:"active_profile_id"`
+	AskHotkey        HotkeyConfig        `json:"ask_hotkey"`
 }
 
 // defaultProfiles returns the built-in dictation profiles.
@@ -78,6 +83,7 @@ func defaultProfiles() []DictationProfile {
 func DefaultSettings() Settings {
 	profiles := defaultProfiles()
 	return Settings{
+		Models: []string{"gemini-2.0-flash"},
 		Hotkey: HotkeyConfig{
 			Modifiers: 0x0002, // MOD_CONTROL
 			VKey:      0x20,   // VK_SPACE
@@ -153,25 +159,46 @@ func LoadSettings() (*Settings, error) {
 	}
 
 	s := Settings{
-		Model:           d.Model,
-		Provider:        d.Provider,
-		ModelByProvider: d.ModelByProvider,
-		Hotkey:          d.Hotkey,
-		Opacity:         d.Opacity,
-		Profiles:        d.Profiles,
-		ActiveProfileID: d.ActiveProfileID,
-		AskHotkey:       d.AskHotkey,
+		Models:           d.Models,
+		Provider:         d.Provider,
+		ModelsByProvider: d.ModelsByProvider,
+		Hotkey:           d.Hotkey,
+		Opacity:          d.Opacity,
+		Profiles:         d.Profiles,
+		ActiveProfileID:  d.ActiveProfileID,
+		AskHotkey:        d.AskHotkey,
 	}
 	// Migrate: default provider when upgrading from older config
 	if s.Provider == "" {
 		s.Provider = "gemini"
 	}
-	if s.ModelByProvider == nil {
-		s.ModelByProvider = make(map[string]string)
+	if s.ModelsByProvider == nil {
+		s.ModelsByProvider = make(map[string][]string)
 	}
-	// Restore the model for the active provider if stored
-	if m, ok := s.ModelByProvider[s.Provider]; ok && m != "" {
-		s.Model = m
+	// Migrate: convert legacy per-provider single-model map to list map
+	if len(s.ModelsByProvider) == 0 && len(d.ModelByProvider) > 0 {
+		for k, v := range d.ModelByProvider {
+			if v != "" {
+				s.ModelsByProvider[k] = []string{v}
+			}
+		}
+	}
+	// Restore models for the active provider
+	if m, ok := s.ModelsByProvider[s.Provider]; ok && len(m) > 0 {
+		s.Models = m
+	} else if len(s.Models) == 0 {
+		// Migrate from old single-model fields
+		if d.Model != "" {
+			s.Models = []string{d.Model}
+		} else if v, ok := d.ModelByProvider[s.Provider]; ok && v != "" {
+			s.Models = []string{v}
+		} else {
+			s.Models = []string{"gemini-2.0-flash"}
+		}
+	}
+	// Keep legacy Model field in sync for any code still using it
+	if len(s.Models) > 0 {
+		s.Model = s.Models[0]
 	}
 	if s.Opacity == 0 {
 		s.Opacity = 100
@@ -217,23 +244,23 @@ func saveSettings(s Settings) error {
 		return err
 	}
 
-	// Keep the per-provider model map in sync
-	if s.ModelByProvider == nil {
-		s.ModelByProvider = make(map[string]string)
+	// Keep the per-provider model list in sync
+	if s.ModelsByProvider == nil {
+		s.ModelsByProvider = make(map[string][]string)
 	}
-	if s.Model != "" && s.Provider != "" {
-		s.ModelByProvider[s.Provider] = s.Model
+	if len(s.Models) > 0 && s.Provider != "" {
+		s.ModelsByProvider[s.Provider] = s.Models
 	}
 
 	d := diskSettings{
-		Model:           s.Model,
-		Provider:        s.Provider,
-		ModelByProvider: s.ModelByProvider,
-		Hotkey:          s.Hotkey,
-		Opacity:         s.Opacity,
-		Profiles:        s.Profiles,
-		ActiveProfileID: s.ActiveProfileID,
-		AskHotkey:       s.AskHotkey,
+		Models:           s.Models,
+		Provider:         s.Provider,
+		ModelsByProvider: s.ModelsByProvider,
+		Hotkey:           s.Hotkey,
+		Opacity:          s.Opacity,
+		Profiles:         s.Profiles,
+		ActiveProfileID:  s.ActiveProfileID,
+		AskHotkey:        s.AskHotkey,
 	}
 
 	data, err := json.MarshalIndent(d, "", "  ")

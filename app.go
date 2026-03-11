@@ -69,7 +69,7 @@ func (a *App) TranscribeAudio(base64Audio string, mimeType string) (string, erro
 
 	logger.Debug("TranscribeAudio: starting", "mimeType", mimeType, "profile", a.settings.ActiveProfileID)
 	start := time.Now()
-	result, err := transcribeAudio(base64Audio, mimeType, a.settings.APIKey, a.settings.Model, prompt, a.settings.Provider)
+	result, err := transcribeAudio(base64Audio, mimeType, a.settings.APIKey, a.settings.Models, prompt, a.settings.Provider)
 	if err != nil {
 		logger.Error("TranscribeAudio: failed", "err", err, "elapsed", time.Since(start).String())
 		return "", err
@@ -106,9 +106,9 @@ func (a *App) AskAI(base64Audio string, mimeType string) (string, error) {
 	var result string
 	var err error
 	if ctxText != "" {
-		result, err = editTextWithAudio(base64Audio, mimeType, a.settings.APIKey, a.settings.Model, ctxText, a.settings.Provider)
+		result, err = editTextWithAudio(base64Audio, mimeType, a.settings.APIKey, a.settings.Models, ctxText, a.settings.Provider)
 	} else {
-		result, err = askQuestion(base64Audio, mimeType, a.settings.APIKey, a.settings.Model, a.settings.Provider)
+		result, err = askQuestion(base64Audio, mimeType, a.settings.APIKey, a.settings.Models, a.settings.Provider)
 	}
 	if err != nil {
 		logger.Error("AskAI: failed", "err", err, "elapsed", time.Since(start).String())
@@ -130,9 +130,9 @@ func (a *App) RegenerateAsk() (string, error) {
 	var result string
 	var err error
 	if a.lastAskContext != "" {
-		result, err = editTextWithAudio(a.lastAskAudio, a.lastAskMime, a.settings.APIKey, a.settings.Model, a.lastAskContext, a.settings.Provider)
+		result, err = editTextWithAudio(a.lastAskAudio, a.lastAskMime, a.settings.APIKey, a.settings.Models, a.lastAskContext, a.settings.Provider)
 	} else {
-		result, err = askQuestion(a.lastAskAudio, a.lastAskMime, a.settings.APIKey, a.settings.Model, a.settings.Provider)
+		result, err = askQuestion(a.lastAskAudio, a.lastAskMime, a.settings.APIKey, a.settings.Models, a.settings.Provider)
 	}
 	if err != nil {
 		logger.Error("RegenerateAsk: failed", "err", err, "elapsed", time.Since(start).String())
@@ -162,7 +162,7 @@ func (a *App) AskFollowUp(base64Audio string, mimeType string, history []ChatTur
 	}
 	logger.Debug("AskFollowUp: starting", "mimeType", mimeType, "historyLen", len(history))
 	start := time.Now()
-	result, err := continueChat(base64Audio, mimeType, a.settings.APIKey, a.settings.Model, history, a.settings.Provider)
+	result, err := continueChat(base64Audio, mimeType, a.settings.APIKey, a.settings.Models, history, a.settings.Provider)
 	if err != nil {
 		logger.Error("AskFollowUp: failed", "err", err, "elapsed", time.Since(start).String())
 		return "", err

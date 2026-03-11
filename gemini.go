@@ -150,20 +150,48 @@ func callGeminiAudio(base64Audio, mimeType, apiKey, model, prompt string) (strin
 	return "", lastErr
 }
 
-// transcribeAudio sends base64-encoded audio to the configured provider using the provided prompt.
-func transcribeAudio(base64Audio, mimeType, apiKey, model, prompt, provider string) (string, error) {
-	if provider == "openrouter" {
-		return callOpenRouterAudio(base64Audio, mimeType, apiKey, model, prompt)
+// tryModels iterates over a list of model names, calling callFn for each one.
+// callFn is expected to contain its own retry/backoff logic for a single model.
+// tryModels only advances to the next model when callFn returns an error.
+func tryModels(models []string, callFn func(model string) (string, error)) (string, error) {
+	if len(models) == 0 {
+		return "", fmt.Errorf("no models configured")
 	}
-	return callGeminiAudio(base64Audio, mimeType, apiKey, model, prompt)
+	var lastErr error
+	for i, model := range models {
+		if i > 0 {
+			logger.Warn("tryModels: falling back to next model", "model", model, "index", i, "totalModels", len(models))
+		}
+		result, err := callFn(model)
+		if err == nil {
+			return result, nil
+		}
+		logger.Error("tryModels: model failed, trying next", "model", model, "index", i, "err", err)
+		lastErr = err
+	}
+	return "", fmt.Errorf("all %d model(s) failed (last error: %w)", len(models), lastErr)
+}
+
+// transcribeAudio sends base64-encoded audio to the configured provider using the provided prompt.
+// Models are tried in order; each exhausts its own retries before the next is attempted.
+func transcribeAudio(base64Audio, mimeType, apiKey string, models []string, prompt, provider string) (string, error) {
+	return tryModels(models, func(model string) (string, error) {
+		if provider == "openrouter" {
+			return callOpenRouterAudio(base64Audio, mimeType, apiKey, model, prompt)
+		}
+		return callGeminiAudio(base64Audio, mimeType, apiKey, model, prompt)
+	})
 }
 
 // askQuestion sends base64-encoded audio to the configured provider using the built-in ask prompt.
-func askQuestion(base64Audio, mimeType, apiKey, model, provider string) (string, error) {
-	if provider == "openrouter" {
-		return callOpenRouterAudio(base64Audio, mimeType, apiKey, model, askPrompt)
-	}
-	return callGeminiAudio(base64Audio, mimeType, apiKey, model, askPrompt)
+// Models are tried in order; each exhausts its own retries before the next is attempted.
+func askQuestion(base64Audio, mimeType, apiKey string, models []string, provider string) (string, error) {
+	return tryModels(models, func(model string) (string, error) {
+		if provider == "openrouter" {
+			return callOpenRouterAudio(base64Audio, mimeType, apiKey, model, askPrompt)
+		}
+		return callGeminiAudio(base64Audio, mimeType, apiKey, model, askPrompt)
+	})
 }
 
 // ChatTurn represents a single message in a multi-turn conversation.
@@ -186,23 +214,22 @@ type geminiChatRequest struct {
 
 // editTextWithAudio sends selected text + audio instruction to the configured provider.
 // The provider is expected to return only the modified version of the selected text.
-func editTextWithAudio(base64Audio, mimeType, apiKey, model, selectedText, provider string) (string, error) {
+// Models are tried in order; each exhausts its own retries before the next is attempted.
+func editTextWithAudio(base64Audio, mimeType, apiKey string, models []string, selectedText, provider string) (string, error) {
 	prompt := fmt.Sprintf(
 		"The user has selected the following text:\n---\n%s\n---\nListen to their audio instruction and apply it to the text above. Return ONLY the resulting text without explanations, preambles, or formatting marks.",
 		selectedText,
 	)
-	if provider == "openrouter" {
-		return callOpenRouterAudio(base64Audio, mimeType, apiKey, model, prompt)
-	}
-	return callGeminiAudio(base64Audio, mimeType, apiKey, model, prompt)
+	return tryModels(models, func(model string) (string, error) {
+		if provider == "openrouter" {
+			return callOpenRouterAudio(base64Audio, mimeType, apiKey, model, prompt)
+		}
+		return callGeminiAudio(base64Audio, mimeType, apiKey, model, prompt)
+	})
 }
 
-// continueChat sends a follow-up audio message to the configured provider with the full conversation history.
-// history contains previous user/model turns (text only); the new user turn carries the audio.
-func continueChat(base64Audio, mimeType, apiKey, model string, history []ChatTurn, provider string) (string, error) {
-	if provider == "openrouter" {
-		return continueOpenRouterChat(base64Audio, mimeType, apiKey, model, history)
-	}
+// continueGeminiChat is the low-level Gemini implementation for multi-turn chat with audio.
+func continueGeminiChat(base64Audio, mimeType, apiKey, model string, history []ChatTurn) (string, error) {
 	if mimeType == "" {
 		mimeType = "audio/webm"
 	}
@@ -299,4 +326,16 @@ func continueChat(base64Audio, mimeType, apiKey, model string, history []ChatTur
 	}
 
 	return "", lastErr
+}
+
+// continueChat sends a follow-up audio message to the configured provider with the full conversation history.
+// history contains previous user/model turns (text only); the new user turn carries the audio.
+// Models are tried in order; each exhausts its own retries before the next is attempted.
+func continueChat(base64Audio, mimeType, apiKey string, models []string, history []ChatTurn, provider string) (string, error) {
+	return tryModels(models, func(model string) (string, error) {
+		if provider == "openrouter" {
+			return continueOpenRouterChat(base64Audio, mimeType, apiKey, model, history)
+		}
+		return continueGeminiChat(base64Audio, mimeType, apiKey, model, history)
+	})
 }

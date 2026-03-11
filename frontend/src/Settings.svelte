@@ -7,22 +7,23 @@
 
   // Config state
   let apiKey = $state('');
-  let model = $state('gemini-2.0-flash');
+  let models = $state(['gemini-2.0-flash']);
   let provider = $state('gemini');
-  let modelByProvider = $state({});
+  let modelsByProvider = $state({});
   let showKey = $state(false);
 
   const providerDefaults = {
-    gemini: { model: 'gemini-2.0-flash', placeholder: 'AIza...', modelDesc: 'Ej: gemini-2.0-flash, gemini-2.5-flash-lite' },
-    openrouter: { model: 'openai/gpt-4o-audio-preview', placeholder: 'sk-or-...', modelDesc: 'Ej: openai/gpt-4o-audio-preview, google/gemini-2.0-flash-001' },
+    gemini: { models: ['gemini-2.0-flash'], placeholder: 'AIza...', modelDesc: 'Modelos en orden de prioridad. Ej: gemini-2.0-flash, gemini-2.5-flash-lite' },
+    openrouter: { models: ['openai/gpt-4o-audio-preview'], placeholder: 'sk-or-...', modelDesc: 'Modelos en orden de prioridad. Ej: openai/gpt-4o-audio-preview, google/gemini-2.0-flash-001' },
   };
 
   async function handleProviderChange(newProvider) {
-    // Persist current model for the outgoing provider
-    modelByProvider = { ...modelByProvider, [provider]: model };
+    // Persist current models for the outgoing provider
+    modelsByProvider = { ...modelsByProvider, [provider]: [...models] };
     provider = newProvider;
-    // Restore model for the incoming provider
-    model = modelByProvider[newProvider] || providerDefaults[newProvider]?.model || '';
+    // Restore models for the incoming provider
+    const stored = modelsByProvider[newProvider];
+    models = (stored && stored.length > 0) ? [...stored] : [...(providerDefaults[newProvider]?.models || [''])];
     // Load the stored key for this provider (may be empty if not set yet)
     try {
       apiKey = await GetAPIKeyForProvider(newProvider) || '';
@@ -56,13 +57,15 @@
   let saveTimer = null;
 
   function buildSavePayload() {
-    // Keep the map in sync with the current model before saving
-    const updatedMap = { ...modelByProvider, [provider]: model.trim() };
+    // Keep the map in sync with the current models before saving
+    const cleanModels = models.map(m => m.trim()).filter(m => m.length > 0);
+    const updatedMap = { ...modelsByProvider, [provider]: cleanModels };
     return {
       api_key: apiKey.trim(),
-      model: model.trim(),
+      model: cleanModels[0] || '',   // backward compat with Go's legacy Model field
+      models: cleanModels,
       provider: provider,
-      model_by_provider: updatedMap,
+      models_by_provider: updatedMap,
       hotkey: { modifiers: hotkeyModifiers, vkey: hotkeyVKey, display: hotkeyDisplay },
       ask_hotkey: { modifiers: askHotkeyModifiers, vkey: askHotkeyVKey, display: askHotkeyDisplay },
       opacity: opacity,
@@ -74,7 +77,7 @@
   function scheduleAutoSave() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(async () => {
-      if (!apiKey.trim() && !model.trim()) return;
+      if (!apiKey.trim() && models.every(m => !m.trim())) return;
       try {
         await SaveSettings(buildSavePayload());
       } catch (_) {}
@@ -92,9 +95,17 @@
     function loadSettings() {
       GetSettings().then(s => {
         provider = s.provider || 'gemini';
-        modelByProvider = s.model_by_provider || {};
+        modelsByProvider = s.models_by_provider || {};
         apiKey = s.api_key || '';
-        model = s.model || modelByProvider[provider] || providerDefaults[provider]?.model || 'gemini-2.0-flash';
+        // New format: models array; fall back to legacy single-model fields for migration
+        if (s.models && s.models.length > 0) {
+          models = [...s.models];
+        } else if (s.model) {
+          models = [s.model];
+        } else {
+          const stored = modelsByProvider[provider];
+          models = (stored && stored.length > 0) ? [...stored] : [...(providerDefaults[provider]?.models || [''])];
+        }
         if (s.hotkey && s.hotkey.display) {
           hotkeyDisplay = s.hotkey.display;
           hotkeyModifiers = s.hotkey.modifiers;
@@ -144,6 +155,41 @@
       askHotkeyDisplay = display;
       capturingAskHotkey = false;
     }
+    scheduleAutoSave();
+  }
+
+  // ── Model list management ───────────────────────────────────────────────
+  function addModel() {
+    models = [...models, ''];
+    scheduleAutoSave();
+  }
+
+  function removeModel(i) {
+    if (models.length <= 1) return;
+    models = models.filter((_, idx) => idx !== i);
+    scheduleAutoSave();
+  }
+
+  function moveModelUp(i) {
+    if (i <= 0) return;
+    const arr = [...models];
+    [arr[i - 1], arr[i]] = [arr[i], arr[i - 1]];
+    models = arr;
+    scheduleAutoSave();
+  }
+
+  function moveModelDown(i) {
+    if (i >= models.length - 1) return;
+    const arr = [...models];
+    [arr[i], arr[i + 1]] = [arr[i + 1], arr[i]];
+    models = arr;
+    scheduleAutoSave();
+  }
+
+  function updateModel(i, value) {
+    const arr = [...models];
+    arr[i] = value;
+    models = arr;
     scheduleAutoSave();
   }
 
@@ -366,18 +412,44 @@
             </div>
           </div>
 
-          <div class="setting-row">
+          <div class="setting-row setting-row--models">
             <div class="setting-info">
-              <span class="setting-title">Modelo</span>
+              <span class="setting-title">Modelos</span>
               <span class="setting-desc">{providerDefaults[provider]?.modelDesc ?? 'Nombre del modelo'}</span>
             </div>
-            <div class="input-wrap">
-              <input
-                type="text"
-                bind:value={model}
-                oninput={scheduleAutoSave}
-                placeholder={providerDefaults[provider]?.model ?? 'modelo'}
-              />
+            <div class="models-list">
+              {#each models as m, i (i)}
+                <div class="model-row">
+                  <input
+                    type="text"
+                    class="model-input"
+                    value={m}
+                    oninput={(e) => updateModel(i, e.target.value)}
+                    placeholder={providerDefaults[provider]?.models?.[0] ?? 'modelo'}
+                  />
+                  <div class="model-row-actions">
+                    <button
+                      class="btn-model-order"
+                      onclick={() => moveModelUp(i)}
+                      disabled={i === 0}
+                      title="Subir"
+                    >&#8593;</button>
+                    <button
+                      class="btn-model-order"
+                      onclick={() => moveModelDown(i)}
+                      disabled={i === models.length - 1}
+                      title="Bajar"
+                    >&#8595;</button>
+                    <button
+                      class="btn-model-remove"
+                      onclick={() => removeModel(i)}
+                      disabled={models.length <= 1}
+                      title="Eliminar"
+                    >&#215;</button>
+                  </div>
+                </div>
+              {/each}
+              <button class="btn-add-model" onclick={addModel}>&#43; Agregar modelo</button>
             </div>
           </div>
         </div>
@@ -641,6 +713,76 @@
   }
   .btn-eye svg { width: 16px; height: 16px; }
   .btn-eye:hover { color: rgba(0,0,0,0.70); }
+
+  /* Model list */
+  .setting-row--models {
+    align-items: flex-start;
+  }
+  .models-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex-shrink: 0;
+    width: 220px;
+  }
+  .model-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .model-input {
+    flex: 1;
+    min-width: 0;
+  }
+  .model-row-actions {
+    display: flex;
+    gap: 3px;
+    flex-shrink: 0;
+  }
+  .btn-model-order,
+  .btn-model-remove {
+    background: none;
+    border: 1px solid rgba(0,0,0,0.15);
+    border-radius: 5px;
+    color: rgba(0,0,0,0.50);
+    cursor: pointer;
+    width: 24px;
+    height: 24px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: background 0.12s, color 0.12s;
+  }
+  .btn-model-order:hover:not(:disabled),
+  .btn-model-remove:hover:not(:disabled) {
+    background: rgba(0,0,0,0.07);
+    color: rgba(0,0,0,0.80);
+  }
+  .btn-model-order:disabled,
+  .btn-model-remove:disabled {
+    opacity: 0.28;
+    cursor: default;
+  }
+  .btn-add-model {
+    align-self: flex-start;
+    background: none;
+    border: 1px dashed rgba(0,0,0,0.22);
+    border-radius: 6px;
+    color: rgba(0,0,0,0.50);
+    cursor: pointer;
+    font-size: 11.5px;
+    font-family: inherit;
+    padding: 4px 10px;
+    margin-top: 2px;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .btn-add-model:hover {
+    background: rgba(2,119,189,0.07);
+    color: #0277bd;
+    border-color: rgba(2,119,189,0.35);
+  }
 
   /* Hotkey */
   .hotkey-wrap { flex-shrink: 0; }
