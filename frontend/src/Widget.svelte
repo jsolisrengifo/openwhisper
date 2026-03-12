@@ -1,6 +1,6 @@
 <script>
   import { onMount, tick } from 'svelte';
-  import { TranscribeAudio, AskAI, ShowAnswer, PasteText, ShowSettingsWindow, HideWindow, GetSettings, EnableCancelHotkey, DisableCancelHotkey } from '../bindings/openwhisper/app.js';
+  import { TranscribeAudio, AskAI, ShowAnswer, PasteText, ShowSettingsWindow, HideWindow, GetSettings, EnableCancelHotkey, DisableCancelHotkey, AddHistoryItem } from '../bindings/openwhisper/app.js';
   import { Events } from '@wailsio/runtime';
   // Non-reactive internal state
   let mediaRecorder = null;
@@ -23,6 +23,9 @@
   let warnStatus = $state(false);
   let hotkeyDisplay = $state('Ctrl+Space');
   let askHotkeyDisplay = $state('Ctrl+Alt+A');
+
+  // Pause state for recording
+  let isPaused = $state(false);
 
   // Marquee state for long status messages
   let statusEl = $state(null);
@@ -145,6 +148,7 @@
 
   async function startRecording(askMode = false) {
     if (isRecording || isStarting || isProcessing) return;
+    isPaused = false;
     isStarting = true; // bloquear re-entradas mientras getUserMedia resuelve
     if (!isConfigured) { isStarting = false; ShowSettingsWindow(); return; }
 
@@ -180,6 +184,7 @@
 
   function stopRecording() {
     if (!isRecording || !mediaRecorder) return;
+    isPaused = false;
     stopWaveform();
     DisableCancelHotkey();
     mediaRecorder.stop();
@@ -187,9 +192,30 @@
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
   }
 
+  function pauseRecording() {
+    if (!isRecording || !mediaRecorder || isPaused) return;
+    stopWaveform();
+    mediaRecorder.pause();
+    isPaused = true;
+    setState('paused', 'En pausa');
+  }
+
+  function resumeRecording() {
+    if (!isRecording || !mediaRecorder || !isPaused) return;
+    mediaRecorder.resume();
+    isPaused = false;
+    setState('recording', isAskMode ? '¿Pregunta?' : 'Grabando');
+    tick().then(() => startWaveform(stream));
+  }
+
+  function togglePause() {
+    if (isPaused) resumeRecording(); else pauseRecording();
+  }
+
   // Cancela la grabación sin transcribir (Escape global desde Go)
   function cancelRecording() {
     if (!isRecording || !mediaRecorder) return;
+    isPaused = false;
     stopWaveform();
     DisableCancelHotkey();
     mediaRecorder.onstop = null; // desconecta el handler para no transcribir
@@ -228,6 +254,7 @@
           return;
         }
         await ShowAnswer(answer.trim());
+        AddHistoryItem(answer.trim(), 'ai').catch(() => {});
         setState('done', '¡Listo!');
         setTimeout(() => setState(null), 2000);
       } else {
@@ -239,6 +266,7 @@
           return;
         }
         await PasteText(text.trim());
+        AddHistoryItem(text.trim(), 'transcription').catch(() => {});
         setState('done', '¡Pegado!');
         setTimeout(() => setState(null), 2000);
       }
@@ -307,6 +335,7 @@
   <button
     class="mic-btn"
     class:recording={uiState === 'recording'}
+    class:paused={uiState === 'paused'}
     class:transcribing={uiState === 'transcribing'}
     class:done={uiState === 'done'}
     class:error={uiState === 'error'}
@@ -331,6 +360,11 @@
     >{statusMessage}</span>
   </span>
   <div class="actions" style="--wails-draggable:no-drag">
+    {#if uiState === 'recording' || uiState === 'paused'}
+      <button class="btn-icon btn-pause" title={isPaused ? 'Reanudar' : 'Pausar'} onclick={togglePause}>
+        {#if isPaused}&#9654;{:else}&#9646;&#9646;{/if}
+      </button>
+    {/if}
     <button class="btn-icon btn-settings-toggle" title="Configuracion" onclick={() => ShowSettingsWindow()}>&#9881;</button>
     <button class="btn-icon btn-hide" title="Ocultar" onclick={() => { if (isRecording) stopRecording(); HideWindow(); }}>&#8722;</button>
   </div>

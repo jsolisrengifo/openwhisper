@@ -1,6 +1,6 @@
 ﻿<script>
   import { onMount } from 'svelte';
-  import { GetSettings, SaveSettings, HideSettingsWindow, GetAPIKeyForProvider } from '../bindings/openwhisper/app.js';
+  import { GetSettings, SaveSettings, HideSettingsWindow, GetAPIKeyForProvider, GetHistory, CopyText, ClearHistory } from '../bindings/openwhisper/app.js';
   import { Events } from '@wailsio/runtime';
 
   let activePage = $state('home');
@@ -55,6 +55,22 @@
 
   // Auto-save debounce
   let saveTimer = null;
+
+  // History state
+  let historyItems = $state([]);
+
+  $effect(() => {
+    if (activePage === 'history') {
+      GetHistory().then(items => { historyItems = items ?? []; }).catch(() => {});
+    }
+  });
+
+  function formatTs(ts) {
+    try {
+      const d = new Date(ts);
+      return d.toLocaleString('es', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch (_) { return ts; }
+  }
 
   function buildSavePayload() {
     // Keep the map in sync with the current models before saving
@@ -248,6 +264,12 @@
           <span>Configuraci&#243;n</span>
         </button>
       </li>
+      <li>
+        <button class="nav-item" class:active={activePage === 'history'} onclick={() => activePage = 'history'}>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+          <span>Historial</span>
+        </button>
+      </li>
     </ul>
   </nav>
 
@@ -363,6 +385,44 @@
             </div>
           {/each}
         </div>
+      </div>
+
+    {:else if activePage === 'history'}
+      <div class="page page-history">
+        <div class="history-header">
+          <div>
+            <h2 class="history-title">Historial de dictados</h2>
+            <p class="history-desc">Tus últimos 10 dictados y respuestas de IA. Si el auto-pegado falló, cópialos desde aquí.</p>
+          </div>
+          {#if historyItems.length > 0}
+            <button class="btn-clear-history" onclick={async () => { await ClearHistory(); historyItems = []; }}>Limpiar todo</button>
+          {/if}
+        </div>
+
+        {#if historyItems.length === 0}
+          <div class="history-empty">
+            <span class="history-empty-icon">&#128203;</span>
+            <p>Aún no hay dictados guardados.</p>
+            <p class="history-empty-sub">Cuando transcribas audio o uses &ldquo;Preguntar a IA&rdquo;, los resultados aparecerán aquí.</p>
+          </div>
+        {:else}
+          <div class="history-list">
+            {#each historyItems as item (item.id)}
+              <div class="history-item">
+                <div class="history-item-meta">
+                  <span class="history-badge" class:badge-ai={item.type === 'ai'}>
+                    {item.type === 'ai' ? '🤖 IA' : '🎙 Dictado'}
+                  </span>
+                  <span class="history-ts">{formatTs(item.timestamp)}</span>
+                </div>
+                <p class="history-text">{item.text.length > 200 ? item.text.slice(0, 200) + '…' : item.text}</p>
+                <div class="history-actions">
+                  <button class="btn-history-copy" onclick={() => CopyText(item.text)} title="Copiar al portapapeles">📋 Copiar</button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </div>
 
     {:else}
@@ -1033,4 +1093,117 @@
     border-color: #0277bd;
     box-shadow: 0 0 0 3px rgba(2,119,189,0.10);
   }
+
+  /* History page */
+  .page-history { gap: 20px; }
+
+  .history-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .history-title { font-size: 15px; font-weight: 700; color: #1a1a1a; margin-bottom: 4px; }
+  .history-desc { font-size: 11.5px; color: rgba(0,0,0,0.40); line-height: 1.5; max-width: 320px; }
+
+  .btn-clear-history {
+    background: none;
+    border: 1px solid rgba(211,47,47,0.35);
+    color: #d32f2f;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 11.5px;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.12s;
+  }
+  .btn-clear-history:hover { background: rgba(211,47,47,0.07); }
+
+  .history-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: rgba(0,0,0,0.35);
+    text-align: center;
+  }
+  .history-empty-icon { font-size: 36px; }
+  .history-empty p { font-size: 13px; }
+  .history-empty-sub { font-size: 11.5px; color: rgba(0,0,0,0.28); max-width: 260px; line-height: 1.5; }
+
+  .history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .history-item {
+    background: #fff;
+    border: 1px solid rgba(0,0,0,0.10);
+    border-radius: 10px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .history-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .history-badge {
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(2,119,189,0.10);
+    color: #0277bd;
+    border-radius: 4px;
+    padding: 2px 7px;
+    white-space: nowrap;
+  }
+  .history-badge.badge-ai {
+    background: rgba(103,58,183,0.10);
+    color: #673ab7;
+  }
+
+  .history-ts {
+    font-size: 11px;
+    color: rgba(0,0,0,0.35);
+  }
+
+  .history-text {
+    font-size: 12.5px;
+    color: rgba(0,0,0,0.72);
+    line-height: 1.55;
+    word-break: break-word;
+    user-select: text;
+  }
+
+  .history-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .btn-history-copy,
+  .btn-history-paste {
+    background: none;
+    border: 1px solid rgba(0,0,0,0.18);
+    border-radius: 6px;
+    color: rgba(0,0,0,0.60);
+    cursor: pointer;
+    font-size: 11.5px;
+    font-family: inherit;
+    padding: 4px 10px;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .btn-history-copy:hover { background: rgba(0,0,0,0.05); color: rgba(0,0,0,0.82); }
 </style>

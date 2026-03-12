@@ -287,3 +287,40 @@ func (a *App) ShowSettingsWindow() {
 func (a *App) HideSettingsWindow() {
 	a.settingsWindow.Hide()
 }
+
+// AddHistoryItem prepends a new entry to the dictation history (max 10 items).
+func (a *App) AddHistoryItem(text string, itemType string) {
+	items := loadHistory()
+	newItem := HistoryItem{
+		ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
+		Text:      text,
+		Type:      itemType,
+		Timestamp: time.Now().Format(time.RFC3339),
+	}
+	items = append([]HistoryItem{newItem}, items...)
+	if len(items) > 10 {
+		items = items[:10]
+	}
+	_ = saveHistory(items)
+}
+
+// GetHistory returns the dictation history list.
+func (a *App) GetHistory() []HistoryItem {
+	return loadHistory()
+}
+
+// PasteFromHistory hides the settings window, then pastes the given text.
+// The brief delay lets the previously focused window regain focus before Ctrl+V fires.
+func (a *App) PasteFromHistory(text string) error {
+	if a.settingsWindow != nil {
+		a.settingsWindow.Hide()
+	}
+	time.Sleep(300 * time.Millisecond)
+	a.app.Clipboard.SetText(text)
+	return pasteViaKeyboard()
+}
+
+// ClearHistory removes all entries from the dictation history.
+func (a *App) ClearHistory() error {
+	return saveHistory([]HistoryItem{})
+}

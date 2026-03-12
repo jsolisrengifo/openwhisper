@@ -271,3 +271,53 @@ func saveSettings(s Settings) error {
 	// Write with restrictive permissions (only owner can read/write)
 	return os.WriteFile(path, data, 0600)
 }
+
+// HistoryItem represents a single dictation or AI-response entry.
+type HistoryItem struct {
+	ID        string `json:"id"`
+	Text      string `json:"text"`
+	Type      string `json:"type"`      // "transcription" or "ai"
+	Timestamp string `json:"timestamp"` // RFC3339
+}
+
+// historyPath returns the path to the dictation history file.
+func historyPath() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(configDir, "openwhisper", "history.json"), nil
+}
+
+// loadHistory reads the history file. Returns an empty slice when not found or on error.
+func loadHistory() []HistoryItem {
+	path, err := historyPath()
+	if err != nil {
+		return []HistoryItem{}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return []HistoryItem{}
+	}
+	var items []HistoryItem
+	if err := json.Unmarshal(data, &items); err != nil {
+		return []HistoryItem{}
+	}
+	return items
+}
+
+// saveHistory writes the history slice to disk.
+func saveHistory(items []HistoryItem) error {
+	path, err := historyPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(items, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0600)
+}

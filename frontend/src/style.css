@@ -95,6 +95,15 @@ html, body {
 .mic-btn.done .mic-icon { color: #4caf50; }
 .mic-btn.error .mic-icon { color: #f57f17; }
 
+.mic-btn.paused .mic-icon { color: #f59e0b; }
+.btn-pause {
+    color: #f59e0b !important;
+    font-size: 9px !important;
+    padding: 2px !important;
+    line-height: 1 !important;
+    letter-spacing: -0.5px;
+}
+
 @keyframes pulse-color {
     0%, 100% { color: #e53935; }
     50%       { color: #ef9a9a; }

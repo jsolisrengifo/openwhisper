@@ -14,6 +14,8 @@ Built with [Go](https://go.dev/) + [Wails v3](https://v3.wails.io/)
 - **Multi-provider**  switch between **Google Gemini** and **OpenRouter** (100+ models); each provider stores its own API key and last-used model independently
 - **Dictation profiles**  create multiple named profiles, each with a custom prompt — switch the active profile at any time
 - **Auto-paste**  transcribed text is pasted directly at your cursor position
+- **Pause & resume recording**  press the ⏸ button in the widget during an active recording to pause; press ▶ to continue — all audio chunks are preserved and sent together when you stop
+- **Dictation history**  the last 10 transcriptions and AI responses are saved to disk; access them from the **Historial** tab in Settings and copy any entry to the clipboard with one click
 - **Always on top**  frameless floating window, stays visible over other apps
 - **Minimal UI**  compact widget window, dark theme, no distractions
 - **Secure credential storage**  API keys stored in the OS native keyring, never in plain text
@@ -87,6 +89,19 @@ Enter any model name compatible with the selected provider, e.g.:
 
 Both shortcuts are fully customizable — click the key combination to capture a new one.
 
+### Pause & Resume (widget button)
+
+While a recording is active, a small **⏸** button appears in the widget toolbar. Click it to pause the microphone; click **▶** to resume. All audio captured before and after the pause is merged into a single request when you stop. This is useful for long dictations where you need a moment to think before continuing.
+
+### Dictation history (Historial tab)
+
+Every successful transcription and AI response is automatically saved to the history (up to 10 entries, oldest discarded). Open settings and navigate to **Historial** to:
+
+- See each entry with its type (🎙 Dictado / 🤖 IA) and timestamp
+- Click **Copiar** to place the full text in the clipboard and paste it wherever you need
+
+History is stored on disk and persists across restarts.
+
 ### Dictation profiles (Perfiles tab)
 
 Each profile defines how the AI processes the audio via a **system prompt**. You can:
@@ -105,6 +120,7 @@ Settings are auto-saved 600 ms after the last change. The widget refreshes immed
 | Data | Location |
 |------|----------|
 | Model, provider, hotkeys, profiles | `%APPDATA%\openwhisper\config.json` |
+| **Dictation history** | `%APPDATA%\openwhisper\history.json` |
 | **API Keys** | **OS native keyring** — Windows Credential Manager |
 
 > **Security note:** API keys are never written to `config.json`. They are stored exclusively in the operating system's secure credential store, isolated from the file system and inaccessible to other user processes without explicit authorization.
