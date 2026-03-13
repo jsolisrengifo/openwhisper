@@ -28,11 +28,12 @@ var (
 	procSetWindowRgnWin               = modUser32Win.NewProc("SetWindowRgn")
 	procCreateRoundRectRgnWin         = modGdi32Win.NewProc("CreateRoundRectRgn")
 	procDwmSetWindowAttributeWin      = modDwmapiWin.NewProc("DwmSetWindowAttribute")
+	procGetWindowRectWin              = modUser32Win.NewProc("GetWindowRect")
 )
 
 // applyRoundedCorners clips the native window to a rounded rectangle so that
 // the OS compositor never renders the square corners behind the CSS border-radius.
-// Radius should match the CSS border-radius value (in px).
+// Radius should match the CSS border-radius value (in logical px).
 func applyRoundedCorners(hwnd uintptr, w, h, radius int) {
 	// Windows 11+: ask DWM to clip with smooth rounded corners.
 	policy := uint32(dwmwcpRound)
@@ -49,10 +50,26 @@ func applyRoundedCorners(hwnd uintptr, w, h, radius int) {
 	}
 
 	// Windows 10 fallback (and ensures hit-testing is also clipped):
-	// Create a rounded-rectangle GDI region and assign it to the window.
+	// Use GetWindowRect for physical pixel dimensions so that DPI scaling
+	// does not leave a transparent strip (logical px != physical px at DPI > 100%).
+	type winRECT struct{ Left, Top, Right, Bottom int32 }
+	var rc winRECT
+	procGetWindowRectWin.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
+	physW := int(rc.Right - rc.Left)
+	physH := int(rc.Bottom - rc.Top)
+	if physW <= 0 || physH <= 0 {
+		// Fallback to logical dimensions if GetWindowRect fails
+		physW, physH = w, h
+	}
+	// Scale radius proportionally from logical to physical pixels
+	physRadius := radius
+	if w > 0 {
+		physRadius = radius * physW / w
+	}
+
 	hRgn, _, err2 := procCreateRoundRectRgnWin.Call(
-		0, 0, uintptr(w), uintptr(h),
-		uintptr(radius*2), uintptr(radius*2),
+		0, 0, uintptr(physW), uintptr(physH),
+		uintptr(physRadius*2), uintptr(physRadius*2),
 	)
 	if hRgn == 0 {
 		logger.Warn("applyRoundedCorners: CreateRoundRectRgn failed", "err", err2)
@@ -60,7 +77,7 @@ func applyRoundedCorners(hwnd uintptr, w, h, radius int) {
 	}
 	// SetWindowRgn takes ownership; do NOT DeleteObject afterwards.
 	procSetWindowRgnWin.Call(hwnd, hRgn, 1 /* bRedraw = TRUE */)
-	logger.Debug("applyRoundedCorners: GDI region applied", "hwnd", hwnd, "w", w, "h", h, "radius", radius)
+	logger.Debug("applyRoundedCorners: GDI region applied", "hwnd", hwnd, "physW", physW, "physH", physH, "physRadius", physRadius)
 }
 
 // applyWindowOpacity sets the OS-level opacity of the given Wails window.

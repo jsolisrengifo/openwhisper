@@ -40,12 +40,12 @@ func main() {
 
 	widgetWindow := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             "widget",
-		Width:            190,
-		Height:           46,
-		MinWidth:         190,
-		MinHeight:        46,
-		MaxWidth:         190,
-		MaxHeight:        46,
+		Width:            100,
+		Height:           22,
+		MinWidth:         100,
+		MinHeight:        22,
+		MaxWidth:         100,
+		MaxHeight:        22,
 		DisableResize:    true,
 		Frameless:        true,
 		AlwaysOnTop:      true,
@@ -131,7 +131,7 @@ func main() {
 		go func() {
 			for i := 0; i < 40; i++ {
 				if uintptr(widgetWindow.NativeWindow()) != 0 {
-					applyRoundedCorners(uintptr(widgetWindow.NativeWindow()), 190, 46, 10)
+					applyRoundedCorners(uintptr(widgetWindow.NativeWindow()), 90, 22, 5)
 					applyWindowOpacity(widgetWindow, opacityPct)
 					return
 				}

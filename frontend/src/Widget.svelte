@@ -63,28 +63,21 @@
       const source = audioCtx.createMediaStreamSource(micStream);
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 1024;
-      analyser.smoothingTimeConstant = 0.6;
+      analyser.smoothingTimeConstant = 0.82;
       source.connect(analyser);
 
       const bufLen = analyser.fftSize;
       const floatBuf = new Float32Array(bufLen);
       const ctx2d = canvas.getContext('2d');
 
-      const W = canvas.width;   // 38
-      const H = canvas.height;  // 28
+      const W = canvas.width;   // 26
+      const H = canvas.height;  // 14
       const mid = H / 2;
 
-      // Parámetros de barras
-      const BAR_W   = 3;     // ancho de barra en px
-      const GAP     = 2;     // separación entre barras en px
-      const STEP    = BAR_W + GAP;
-      const N_BARS  = Math.floor(W / STEP); // ~19 barras
-      const BAR_MAX = mid - 2;              // altura máxima (mitad del canvas - margen)
-      const BAR_MIN = 1.5;                  // altura mínima visible en silencio
-
-      // Historial de amplitudes (una por barra)
-      const amp     = new Float32Array(N_BARS);
-      const SAMPLE_MS = 80;  // ~12 barras/segundo → scroll visible pero no tan rápido
+      // Circular buffer of RMS samples for the smooth curve
+      const N_POINTS = 16;
+      const amp = new Float32Array(N_POINTS);
+      const SAMPLE_MS = 50;
       let lastTs = -SAMPLE_MS;
 
       function draw(ts) {
@@ -93,48 +86,45 @@
         if (ts - lastTs >= SAMPLE_MS) {
           lastTs = ts;
           analyser.getFloatTimeDomainData(floatBuf);
-          // RMS del frame actual
           let sum = 0;
           for (let i = 0; i < bufLen; i++) sum += floatBuf[i] * floatBuf[i];
           const rms = Math.sqrt(sum / bufLen);
-          // Scroll: shift left, nuevo valor a la derecha
           amp.copyWithin(0, 1);
-          amp[N_BARS - 1] = Math.min(1, rms * 6);
+          amp[N_POINTS - 1] = Math.min(1, rms * 6);
         }
 
         ctx2d.clearRect(0, 0, W, H);
 
-        for (let i = 0; i < N_BARS; i++) {
-          const halfH = amp[i] * BAR_MAX + BAR_MIN;
-          const x     = i * STEP;
-          const y     = mid - halfH;
-          const barH  = halfH * 2;
+        // Draw smooth sine-like curve through amplitude points
+        ctx2d.beginPath();
+        ctx2d.lineWidth = 2;
+        ctx2d.lineCap = 'round';
+        ctx2d.lineJoin = 'round';
+        ctx2d.strokeStyle = '#ef5350';
 
-          // Barra sólida con bordes redondeados, simétrica al centro
-          ctx2d.fillStyle = '#ef5350';
-          roundRect(ctx2d, x, y, BAR_W, barH, BAR_W / 2);
+        const step = W / (N_POINTS - 1);
+        for (let i = 0; i < N_POINTS; i++) {
+          const x = i * step;
+          // Alternate sign for sine-like oscillation
+          const sign = (i % 2 === 0) ? 1 : -1;
+          const maxDeflection = mid - 4;
+          const y = mid + sign * amp[i] * maxDeflection;
+          if (i === 0) {
+            ctx2d.moveTo(x, y);
+          } else {
+            // Smooth bezier between points
+            const prevX = (i - 1) * step;
+            const prevSign = ((i - 1) % 2 === 0) ? 1 : -1;
+            const prevY = mid + prevSign * amp[i - 1] * maxDeflection;
+            const cpx = (prevX + x) / 2;
+            ctx2d.bezierCurveTo(cpx, prevY, cpx, y, x, y);
+          }
         }
+        ctx2d.stroke();
       }
 
       requestAnimationFrame(draw);
     } catch (_) {}
-  }
-
-  // Dibuja un rectángulo con esquinas redondeadas (compatible con todos los navegadores)
-  function roundRect(ctx2d, x, y, w, h, r) {
-    if (h < r * 2) r = h / 2;
-    ctx2d.beginPath();
-    ctx2d.moveTo(x + r, y);
-    ctx2d.lineTo(x + w - r, y);
-    ctx2d.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx2d.lineTo(x + w, y + h - r);
-    ctx2d.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx2d.lineTo(x + r, y + h);
-    ctx2d.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx2d.lineTo(x, y + r);
-    ctx2d.quadraticCurveTo(x, y, x + r, y);
-    ctx2d.closePath();
-    ctx2d.fill();
   }
 
   function stopWaveform() {
@@ -359,29 +349,26 @@
     style="--wails-draggable:no-drag"
     onclick={toggleRecording}
   >
-    {#if uiState === 'recording'}
-      <canvas bind:this={waveformCanvas} class="waveform-canvas" width="38" height="28" aria-hidden="true"></canvas>
-    {:else}
-      <svg class="mic-icon" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-      </svg>
-    {/if}
+    <svg class="mic-icon" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+      <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+    </svg>
   </button>
-  <span class="status-track" class:warn={warnStatus} bind:this={statusEl}>
-    <span
-      class="status-inner"
-      class:scrolling={statusScrolling}
-      style={statusScrolling ? `--sx: -${statusScrollPx}px; --dur: ${statusDuration}` : ''}
-    >{statusMessage}</span>
-  </span>
   <div class="actions" style="--wails-draggable:no-drag">
     {#if uiState === 'recording' || uiState === 'paused'}
       <button class="btn-icon btn-pause" title={isPaused ? 'Reanudar' : 'Pausar'} onclick={togglePause}>
-        {#if isPaused}&#9654;{:else}&#9646;&#9646;{/if}
+        {#if isPaused}
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        {:else}
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+        {/if}
       </button>
     {/if}
-    <button class="btn-icon btn-settings-toggle" title="Configuracion" onclick={() => ShowSettingsWindow()}>&#9881;</button>
-    <button class="btn-icon btn-hide" title="Ocultar" onclick={() => { if (isRecording) stopRecording(); HideWindow(); }}>&#8722;</button>
+    <button class="btn-icon btn-settings-toggle" title="Configuracion" onclick={() => ShowSettingsWindow()}>
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.37 1.04.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.57 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+    </button>
+    <button class="btn-icon btn-hide" title="Ocultar" onclick={() => { if (isRecording) stopRecording(); HideWindow(); }}>
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg>
+    </button>
   </div>
 </div>

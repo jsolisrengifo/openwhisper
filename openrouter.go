@@ -98,6 +98,10 @@ func extractOpenRouterText(body []byte, attempt int, elapsed time.Duration) (str
 			"elapsed", elapsed.String(),
 		)
 		err := fmt.Errorf("OpenRouter API error %d: %s", orResp.Error.Code, orResp.Error.Message)
+		if isQuotaExceeded(orResp.Error.Code, orResp.Error.Message) {
+			logger.Warn("openrouter: quota exceeded, skipping to next model")
+			return "", err, false
+		}
 		return "", err, isRetryable(orResp.Error.Code)
 	}
 	if len(orResp.Choices) == 0 || orResp.Choices[0].Message.Content == "" {

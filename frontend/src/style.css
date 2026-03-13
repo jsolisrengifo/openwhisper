@@ -8,7 +8,7 @@ html, body {
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: transparent;
+    background: #121212;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     font-size: 13px;
     color: #ffffff;
@@ -19,8 +19,8 @@ html, body {
     width: 100%;
     height: 100%;
     background: #121212;
-    border-radius: 10px;
-    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 5px;
+    border: 1px solid rgba(255,255,255,0.08);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -28,12 +28,11 @@ html, body {
 
 /*  Barra compacta (siempre visible)  */
 .bar {
-    height: 46px;
+    flex: 1;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 0 8px;
-    flex-shrink: 0;
+    gap: 4px;
+    padding: 0 4px;
 }
 
 /*  Botones de icono  */
@@ -42,11 +41,21 @@ html, body {
     border: none;
     color: rgba(255,255,255,0.5);
     cursor: pointer;
-    padding: 2px 5px;
+    padding: 0;
     border-radius: 4px;
     font-size: 13px;
     line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
     transition: background 0.15s, color 0.15s;
+}
+.btn-icon svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
 }
 .btn-icon:hover {
     background: rgba(255,255,255,0.1);
@@ -69,7 +78,7 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 3px;
+    padding: 2px;
     border-radius: 4px;
     flex-shrink: 0;
     transition: background 0.15s, transform 0.1s;
@@ -82,8 +91,8 @@ html, body {
 }
 
 .mic-icon {
-    width: 22px;
-    height: 22px;
+    width: 16px;
+    height: 16px;
     color: rgba(255,255,255,0.65);
     transition: color 0.2s;
 }
@@ -96,13 +105,6 @@ html, body {
 .mic-btn.error .mic-icon { color: #f57f17; }
 
 .mic-btn.paused .mic-icon { color: #f59e0b; }
-.btn-pause {
-    color: #f59e0b !important;
-    font-size: 9px !important;
-    padding: 2px !important;
-    line-height: 1 !important;
-    letter-spacing: -0.5px;
-}
 
 @keyframes pulse-color {
     0%, 100% { color: #e53935; }
@@ -112,8 +114,8 @@ html, body {
 /* ── Waveform canvas ── */
 .waveform-canvas {
     display: block;
-    width: 38px;
-    height: 28px;
+    width: 26px;
+    height: 14px;
     flex-shrink: 0;
 }
 
@@ -145,9 +147,13 @@ html, body {
 /*  Acciones (botones derecha)  */
 .actions {
     display: flex;
-    gap: 2px;
+    gap: 1px;
     margin-left: auto;
     flex-shrink: 0;
+    /* Ancho fijo = 3 botones × 20px + 2 gaps × 1px para que el micrófono
+       no se desplace cuando el botón de pausa aparece/desaparece */
+    width: 62px;
+    justify-content: flex-end;
 }
 
 /*  Panel de configuración  */

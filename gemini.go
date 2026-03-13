@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -48,6 +49,21 @@ type geminiResponse struct {
 // isRetryable returns true for transient server-side error codes that warrant a retry.
 func isRetryable(code int) bool {
 	return code == 429 || code == 500 || code == 502 || code == 503 || code == 504
+}
+
+// isQuotaExceeded returns true when a 429 error indicates the quota/billing limit
+// has been reached, as opposed to a transient rate-limit. In this case retrying
+// the same model is pointless; tryModels should advance to the next one.
+func isQuotaExceeded(code int, message string) bool {
+	if code != 429 {
+		return false
+	}
+	lower := strings.ToLower(message)
+	return strings.Contains(lower, "quota") ||
+		strings.Contains(lower, "resource") && strings.Contains(lower, "exhausted") ||
+		strings.Contains(lower, "billing") ||
+		strings.Contains(lower, "limit exceeded") ||
+		strings.Contains(lower, "rate limit") && strings.Contains(lower, "exceeded")
 }
 
 // callGeminiAudio is the shared implementation that sends audio + a text prompt to Gemini.
@@ -120,6 +136,10 @@ func callGeminiAudio(base64Audio, mimeType, apiKey, model, prompt string) (strin
 			logger.Error("gemini: API error", "code", gemResp.Error.Code, "message", gemResp.Error.Message, "attempt", attempt+1, "elapsed", time.Since(start).String())
 			lastErr = fmt.Errorf("Gemini API error %d: %s", gemResp.Error.Code, gemResp.Error.Message)
 			if !isRetryable(gemResp.Error.Code) {
+				return "", lastErr
+			}
+			if isQuotaExceeded(gemResp.Error.Code, gemResp.Error.Message) {
+				logger.Warn("gemini: quota exceeded, skipping to next model", "model", model)
 				return "", lastErr
 			}
 			continue
@@ -304,6 +324,10 @@ func continueGeminiChat(base64Audio, mimeType, apiKey, model string, history []C
 			logger.Error("gemini: continueChat API error", "code", gemResp.Error.Code, "message", gemResp.Error.Message, "attempt", attempt+1)
 			lastErr = fmt.Errorf("Gemini API error %d: %s", gemResp.Error.Code, gemResp.Error.Message)
 			if !isRetryable(gemResp.Error.Code) {
+				return "", lastErr
+			}
+			if isQuotaExceeded(gemResp.Error.Code, gemResp.Error.Message) {
+				logger.Warn("gemini: quota exceeded, skipping to next model", "model", model)
 				return "", lastErr
 			}
 			continue
