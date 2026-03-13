@@ -16,10 +16,14 @@ const (
 // keyringUserForProvider returns the keyring username for the given provider.
 // "gemini" maps to the legacy key so existing stored keys still work.
 func keyringUserForProvider(provider string) string {
-	if provider == "openrouter" {
+	switch provider {
+	case "openrouter":
 		return "openrouter_api_key"
+	case "google_tts":
+		return "google_tts_api_key"
+	default:
+		return "gemini_api_key"
 	}
-	return "gemini_api_key"
 }
 
 // HotkeyConfig stores a global keyboard shortcut definition.
@@ -37,7 +41,7 @@ type DictationProfile struct {
 }
 
 // Settings holds the app configuration.
-// APIKey is NOT persisted in the JSON file; it lives in the OS keyring.
+// APIKey and TTSAPIKey are NOT persisted in the JSON file; they live in the OS keyring.
 type Settings struct {
 	APIKey           string              `json:"api_key,omitempty"`            // Only in memory / transmitted to UI; never written to disk
 	Model            string              `json:"model,omitempty"`              // Derived from Models[0]; kept for migration compat only
@@ -50,10 +54,13 @@ type Settings struct {
 	Profiles         []DictationProfile  `json:"profiles"`
 	ActiveProfileID  string              `json:"active_profile_id"`
 	AskHotkey        HotkeyConfig        `json:"ask_hotkey"`
+	TTSAPIKey        string              `json:"tts_api_key,omitempty"` // Only in memory; stored in keyring as "google_tts_api_key"
+	TTSSpeakingRate  float64             `json:"tts_speaking_rate"`     // Speech speed: 0.25–4.0, default 1.0
+	TTSHotkey        HotkeyConfig        `json:"tts_hotkey"`
 }
 
 // diskSettings is the representation written to config.json.
-// The API key is intentionally absent.
+// API keys are intentionally absent (stored in the OS keyring).
 // Legacy fields (Model, ModelByProvider) are kept for reading old configs; new fields are canonical.
 type diskSettings struct {
 	Model            string              `json:"model,omitempty"` // Legacy; read only for migration
@@ -66,6 +73,8 @@ type diskSettings struct {
 	Profiles         []DictationProfile  `json:"profiles"`
 	ActiveProfileID  string              `json:"active_profile_id"`
 	AskHotkey        HotkeyConfig        `json:"ask_hotkey"`
+	TTSSpeakingRate  float64             `json:"tts_speaking_rate"`
+	TTSHotkey        HotkeyConfig        `json:"tts_hotkey"`
 }
 
 // defaultProfiles returns the built-in dictation profiles.
@@ -94,6 +103,12 @@ func DefaultSettings() Settings {
 			VKey:      0x20,   // VK_SPACE
 			Display:   "Ctrl+Shift+Space",
 		},
+		TTSHotkey: HotkeyConfig{
+			Modifiers: 0x0005, // MOD_CONTROL | MOD_ALT
+			VKey:      0x54,   // VK_T
+			Display:   "Ctrl+Alt+T",
+		},
+		TTSSpeakingRate: 1.0,
 		Opacity:         100,
 		Profiles:        profiles,
 		ActiveProfileID: profiles[0].ID,
@@ -167,6 +182,8 @@ func LoadSettings() (*Settings, error) {
 		Profiles:         d.Profiles,
 		ActiveProfileID:  d.ActiveProfileID,
 		AskHotkey:        d.AskHotkey,
+		TTSSpeakingRate:  d.TTSSpeakingRate,
+		TTSHotkey:        d.TTSHotkey,
 	}
 	// Migrate: default provider when upgrading from older config
 	if s.Provider == "" {
@@ -219,18 +236,33 @@ func LoadSettings() (*Settings, error) {
 			Display:   "Ctrl+Shift+Space",
 		}
 	}
+	// Migrate: default TTS hotkey and speaking rate when upgrading from older config
+	if s.TTSHotkey.Modifiers == 0 && s.TTSHotkey.VKey == 0 {
+		s.TTSHotkey = HotkeyConfig{
+			Modifiers: 0x0005, // MOD_CONTROL | MOD_ALT
+			VKey:      0x54,   // VK_T
+			Display:   "Ctrl+Alt+T",
+		}
+	}
+	if s.TTSSpeakingRate == 0 {
+		s.TTSSpeakingRate = 1.0
+	}
 
-	// Load the API key for the active provider from the secure keyring (best-effort: empty on error)
+	// Load API keys from the secure keyring (best-effort: empty on error)
 	s.APIKey, _ = loadAPIKey(s.Provider)
+	s.TTSAPIKey, _ = loadAPIKey("google_tts")
 
 	return &s, nil
 }
 
-// saveSettings persists non-sensitive settings to disk and stores the API key
+// saveSettings persists non-sensitive settings to disk and stores API keys
 // in the OS native keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service).
 func saveSettings(s Settings) error {
-	// 1. Persist the API key securely under the active provider's keyring slot
+	// 1. Persist API keys securely in the OS keyring
 	if err := saveAPIKey(s.APIKey, s.Provider); err != nil {
+		return err
+	}
+	if err := saveAPIKey(s.TTSAPIKey, "google_tts"); err != nil {
 		return err
 	}
 
@@ -261,6 +293,8 @@ func saveSettings(s Settings) error {
 		Profiles:         s.Profiles,
 		ActiveProfileID:  s.ActiveProfileID,
 		AskHotkey:        s.AskHotkey,
+		TTSSpeakingRate:  s.TTSSpeakingRate,
+		TTSHotkey:        s.TTSHotkey,
 	}
 
 	data, err := json.MarshalIndent(d, "", "  ")

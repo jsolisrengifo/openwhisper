@@ -160,8 +160,10 @@ func main() {
 
 	appStruct.hotkey = NewHotkeyManager(wailsApp, widgetWindow)
 	appStruct.setupAskContextCapture()
+	appStruct.setupTTSContextCapture()
 	go appStruct.hotkey.Start(settings.Hotkey.Modifiers, settings.Hotkey.VKey)
 	appStruct.hotkey.StartAsk(settings.AskHotkey.Modifiers, settings.AskHotkey.VKey)
+	appStruct.hotkey.StartTTS(settings.TTSHotkey.Modifiers, settings.TTSHotkey.VKey)
 
 	startTray(wailsApp, widgetWindow)
 

@@ -260,6 +260,9 @@ func (a *App) SaveSettings(s Settings) error {
 		if s.AskHotkey.Modifiers != a.settings.AskHotkey.Modifiers || s.AskHotkey.VKey != a.settings.AskHotkey.VKey {
 			a.hotkey.RestartAsk(s.AskHotkey.Modifiers, s.AskHotkey.VKey)
 		}
+		if s.TTSHotkey.Modifiers != a.settings.TTSHotkey.Modifiers || s.TTSHotkey.VKey != a.settings.TTSHotkey.VKey {
+			a.hotkey.RestartTTS(s.TTSHotkey.Modifiers, s.TTSHotkey.VKey)
+		}
 	}
 	a.settings = &s
 	// Apply opacity change to the widget window
@@ -323,4 +326,89 @@ func (a *App) PasteFromHistory(text string) error {
 // ClearHistory removes all entries from the dictation history.
 func (a *App) ClearHistory() error {
 	return saveHistory([]HistoryItem{})
+}
+
+// GetTTSAPIKey loads the Google Cloud TTS API key from the OS keyring.
+func (a *App) GetTTSAPIKey() (string, error) {
+	return loadAPIKey("google_tts")
+}
+
+// SpeakText calls the Google Cloud TTS API with the given text and returns the base64 MP3 audio.
+// Called from the frontend when a user wants to play a TTS response from the Ask window.
+func (a *App) SpeakText(text string) (string, error) {
+	if a.settings == nil || a.settings.TTSAPIKey == "" {
+		logger.Warn("SpeakText: no TTS API key configured")
+		a.app.Event.Emit("open-settings")
+		return "", fmt.Errorf("API key de TTS no configurada. Por favor configura tu API key de Google Cloud TTS")
+	}
+	if text == "" {
+		return "", fmt.Errorf("no hay texto para reproducir")
+	}
+	rate := a.settings.TTSSpeakingRate
+	if rate == 0 {
+		rate = 1.0
+	}
+	logger.Debug("SpeakText: starting", "chars", len(text), "speakingRate", rate)
+	audio, err := synthesizeSpeech(text, a.settings.TTSAPIKey, rate)
+	if err != nil {
+		logger.Error("SpeakText: synthesis failed", "err", err)
+		return "", err
+	}
+	return audio, nil
+}
+
+// setupTTSContextCapture assigns an OnBeforeTTS hook to the hotkey manager.
+// When the TTS hotkey fires, it captures selected text via Ctrl+C, then calls
+// Google Cloud TTS and emits the result to the Ask window for playback.
+func (a *App) setupTTSContextCapture() {
+	if a.hotkey == nil {
+		return
+	}
+	a.hotkey.OnBeforeTTS = func() {
+		if a.settings == nil || a.settings.TTSAPIKey == "" {
+			logger.Warn("TTS hotkey: no API key configured")
+			a.app.Event.Emit("open-settings")
+			return
+		}
+		// Capture currently selected text via Ctrl+C
+		prev, _ := readClipboardText()
+		_ = copyViaKeyboard()
+		time.Sleep(200 * time.Millisecond)
+		after, _ := readClipboardText()
+
+		textToSpeak := ""
+		if after != "" && after != prev {
+			textToSpeak = after
+		}
+		if textToSpeak == "" {
+			logger.Warn("TTS hotkey: no text selected")
+			a.app.Event.Emit("tts:error", "No hay texto seleccionado para reproducir")
+			return
+		}
+
+		logger.Debug("TTS hotkey: captured text", "chars", len(textToSpeak))
+		// Show Ask window and signal processing state
+		a.askWindow.Show()
+		a.askWindow.Center()
+		a.askWindow.Focus()
+		a.app.Event.Emit("ask:new-chat")
+		a.app.Event.Emit("tts:processing")
+
+		rate := a.settings.TTSSpeakingRate
+		if rate == 0 {
+			rate = 1.0
+		}
+		ttsKey := a.settings.TTSAPIKey
+
+		// Run TTS in a background goroutine so the hotkey thread is not blocked.
+		go func() {
+			audio, err := synthesizeSpeech(textToSpeak, ttsKey, rate)
+			if err != nil {
+				logger.Error("TTS hotkey: synthesis failed", "err", err)
+				a.app.Event.Emit("tts:error", err.Error())
+				return
+			}
+			a.app.Event.Emit("tts:audio", audio)
+		}()
+	}
 }

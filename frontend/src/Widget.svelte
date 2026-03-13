@@ -312,6 +312,19 @@
     const cancelToggleAskRecording  = Events.On('toggle-ask-recording', toggleAskRecording);
     const cancelCancelRecording     = Events.On('cancel-recording', cancelRecording);
     const cancelOpenSettings        = Events.On('open-settings', () => ShowSettingsWindow());
+    const cancelTTSProcessing       = Events.On('tts:processing', () => {
+      setState('transcribing', 'Sintetizando…');
+    });
+    const cancelTTSAudio            = Events.On('tts:audio', () => {
+      setState('done', '¡Reproduciendo!');
+      setTimeout(() => setState(null), 2500);
+    });
+    const cancelTTSError            = Events.On('tts:error', (msg) => {
+      const m = typeof msg === 'string' ? msg : (msg?.data ?? 'Error TTS');
+      const short = m.length > 28 ? m.substring(0, 28) + '…' : m;
+      setState('error', short);
+      setTimeout(() => setState(null), 4000);
+    });
     const cancelSettingsSaved       = Events.On('settings:saved', () => {
       GetSettings().then(s => {
         isConfigured = !!(s.api_key && s.model);
@@ -326,6 +339,9 @@
       cancelToggleAskRecording();
       cancelCancelRecording();
       cancelOpenSettings();
+      cancelTTSProcessing();
+      cancelTTSAudio();
+      cancelTTSError();
       cancelSettingsSaved();
     };
   });

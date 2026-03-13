@@ -15,6 +15,7 @@ const (
 	hotkeyID       = 1
 	cancelHotkeyID = 2
 	askHotkeyID    = 3
+	ttsHotkeyID    = 4
 	vkEscape       = 0x1B
 	pmRemove       = 0x0001
 )
@@ -37,26 +38,33 @@ type HotkeyManager struct {
 	quit         chan struct{}
 	escQuit      chan struct{} // cancel hotkey goroutine (Escape, only while recording)
 	askQuit      chan struct{} // ask hotkey goroutine
+	ttsQuit      chan struct{} // tts hotkey goroutine
 	mu           sync.Mutex
 	user32       *windows.LazyDLL
 	// OnBeforeAsk is called synchronously before the ask-recording event is emitted.
 	// Use it to capture any pre-recording context (e.g., clipboard text).
 	OnBeforeAsk func()
+	// OnBeforeTTS is called synchronously when the TTS hotkey fires.
+	// Use it to capture the selected text and trigger synthesis.
+	OnBeforeTTS func()
 }
 
 // NewHotkeyManager creates a new hotkey manager
 func NewHotkeyManager(app *application.App, widgetWindow *application.WebviewWindow) *HotkeyManager {
-	// escQuit and askQuit start pre-closed so their Start methods can detect "not running"
+	// escQuit, askQuit and ttsQuit start pre-closed so their Start methods can detect "not running"
 	escQuit := make(chan struct{})
 	close(escQuit)
 	askQuit := make(chan struct{})
 	close(askQuit)
+	ttsQuit := make(chan struct{})
+	close(ttsQuit)
 	return &HotkeyManager{
 		app:          app,
 		widgetWindow: widgetWindow,
 		quit:         make(chan struct{}),
 		escQuit:      escQuit,
 		askQuit:      askQuit,
+		ttsQuit:      ttsQuit,
 		user32:       windows.NewLazySystemDLL("user32.dll"),
 	}
 }
@@ -283,6 +291,89 @@ func (h *HotkeyManager) runAskListener(modifiers, vkey uint32, quit <-chan struc
 				h.OnBeforeAsk()
 			}
 			h.app.Event.Emit("toggle-ask-recording")
+		}
+
+		time.Sleep(30 * time.Millisecond)
+	}
+}
+
+// StartTTS registers the TTS hotkey and listens for it. Safe to call multiple times.
+func (h *HotkeyManager) StartTTS(modifiers, vkey uint32) {
+	if modifiers == 0 && vkey == 0 {
+		modifiers = 0x0005 // MOD_CONTROL | MOD_ALT
+		vkey = 0x54        // VK_T
+	}
+	h.mu.Lock()
+	select {
+	case <-h.ttsQuit:
+		// closed = not running, start a new one
+		h.ttsQuit = make(chan struct{})
+	default:
+		// open = already running
+		h.mu.Unlock()
+		return
+	}
+	quit := h.ttsQuit
+	h.mu.Unlock()
+	go h.runTTSListener(modifiers, vkey, quit)
+}
+
+// StopTTS stops the TTS hotkey listener.
+func (h *HotkeyManager) StopTTS() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	select {
+	case <-h.ttsQuit:
+		// already stopped
+	default:
+		close(h.ttsQuit)
+	}
+}
+
+// RestartTTS re-registers the TTS hotkey with new parameters.
+func (h *HotkeyManager) RestartTTS(modifiers, vkey uint32) {
+	h.StopTTS()
+	time.Sleep(80 * time.Millisecond)
+	h.mu.Lock()
+	h.ttsQuit = make(chan struct{})
+	h.mu.Unlock()
+	go h.runTTSListener(modifiers, vkey, h.ttsQuit)
+}
+
+func (h *HotkeyManager) runTTSListener(modifiers, vkey uint32, quit <-chan struct{}) {
+	goruntime.LockOSThread()
+	defer goruntime.UnlockOSThread()
+
+	registerHotKey := h.user32.NewProc("RegisterHotKey")
+	unregisterHotKey := h.user32.NewProc("UnregisterHotKey")
+	peekMessage := h.user32.NewProc("PeekMessageW")
+
+	ret, _, _ := registerHotKey.Call(0, ttsHotkeyID, uintptr(modifiers|0x4000), uintptr(vkey))
+	if ret == 0 {
+		registerHotKey.Call(0, ttsHotkeyID, uintptr(modifiers), uintptr(vkey))
+	}
+	defer unregisterHotKey.Call(0, ttsHotkeyID)
+
+	var msg MSG
+	for {
+		select {
+		case <-quit:
+			return
+		default:
+		}
+
+		ret, _, _ := peekMessage.Call(
+			uintptr(unsafe.Pointer(&msg)),
+			0,
+			wmHotkey,
+			wmHotkey,
+			pmRemove,
+		)
+
+		if ret != 0 && msg.Message == wmHotkey && msg.WParam == ttsHotkeyID {
+			if h.OnBeforeTTS != nil {
+				h.OnBeforeTTS()
+			}
 		}
 
 		time.Sleep(30 * time.Millisecond)

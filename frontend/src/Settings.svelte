@@ -1,6 +1,6 @@
 ﻿<script>
   import { onMount } from 'svelte';
-  import { GetSettings, SaveSettings, HideSettingsWindow, GetAPIKeyForProvider, GetHistory, CopyText, ClearHistory } from '../bindings/openwhisper/app.js';
+  import { GetSettings, SaveSettings, HideSettingsWindow, GetAPIKeyForProvider, GetHistory, CopyText, ClearHistory, GetTTSAPIKey } from '../bindings/openwhisper/app.js';
   import { Events } from '@wailsio/runtime';
 
   let activePage = $state('home');
@@ -45,6 +45,15 @@
   let askHotkeyVKey = $state(0x41);
   let capturingAskHotkey = $state(false);
 
+  // TTS state
+  let ttsApiKey = $state('');
+  let showTtsKey = $state(false);
+  let ttsSpeakingRate = $state(1.0);
+  let ttsHotkeyDisplay = $state('Ctrl+Alt+T');
+  let ttsHotkeyModifiers = $state(0x0005);
+  let ttsHotkeyVKey = $state(0x54);
+  let capturingTtsHotkey = $state(false);
+
   // Appearance state
   let opacity = $state(100);
 
@@ -84,6 +93,9 @@
       models_by_provider: updatedMap,
       hotkey: { modifiers: hotkeyModifiers, vkey: hotkeyVKey, display: hotkeyDisplay },
       ask_hotkey: { modifiers: askHotkeyModifiers, vkey: askHotkeyVKey, display: askHotkeyDisplay },
+      tts_api_key: ttsApiKey.trim(),
+      tts_speaking_rate: ttsSpeakingRate,
+      tts_hotkey: { modifiers: ttsHotkeyModifiers, vkey: ttsHotkeyVKey, display: ttsHotkeyDisplay },
       opacity: opacity,
       profiles: profiles,
       active_profile_id: activeProfileID,
@@ -132,9 +144,17 @@
           askHotkeyModifiers = s.ask_hotkey.modifiers;
           askHotkeyVKey = s.ask_hotkey.vkey;
         }
+        if (s.tts_hotkey && s.tts_hotkey.display) {
+          ttsHotkeyDisplay = s.tts_hotkey.display;
+          ttsHotkeyModifiers = s.tts_hotkey.modifiers;
+          ttsHotkeyVKey = s.tts_hotkey.vkey;
+        }
+        ttsSpeakingRate = (s.tts_speaking_rate && s.tts_speaking_rate > 0) ? s.tts_speaking_rate : 1.0;
         opacity = (s.opacity && s.opacity > 0) ? s.opacity : 100;
         profiles = s.profiles && s.profiles.length > 0 ? s.profiles : [];
         activeProfileID = s.active_profile_id || (profiles[0]?.id ?? '');
+        // Load TTS API key separately from the keyring
+        GetTTSAPIKey().then(k => { ttsApiKey = k || ''; }).catch(() => {});
       }).catch(() => {});
     }
 
@@ -145,7 +165,7 @@
   });
 
   function handleGlobalKeyDown(e) {
-    if (!capturingHotkey && !capturingAskHotkey) return;
+    if (!capturingHotkey && !capturingAskHotkey && !capturingTtsHotkey) return;
     if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
     e.preventDefault();
 
@@ -165,11 +185,16 @@
       hotkeyVKey = e.keyCode;
       hotkeyDisplay = display;
       capturingHotkey = false;
-    } else {
+    } else if (capturingAskHotkey) {
       askHotkeyModifiers = mods;
       askHotkeyVKey = e.keyCode;
       askHotkeyDisplay = display;
       capturingAskHotkey = false;
+    } else {
+      ttsHotkeyModifiers = mods;
+      ttsHotkeyVKey = e.keyCode;
+      ttsHotkeyDisplay = display;
+      capturingTtsHotkey = false;
     }
     scheduleAutoSave();
   }
@@ -586,6 +611,78 @@
                 style="--val: {opacity}"
               />
               <span class="opacity-value">{opacity}%</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-group">
+          <p class="group-label">TEXTO A VOZ (TTS)</p>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-title">API Key de Google TTS</span>
+              <span class="setting-desc">Obt&#233;n tu clave en Google Cloud Console &gt; Text-to-Speech</span>
+            </div>
+            <div class="input-wrap">
+              <input
+                type={showTtsKey ? 'text' : 'password'}
+                bind:value={ttsApiKey}
+                oninput={scheduleAutoSave}
+                placeholder="AIza..."
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <button class="btn-eye" onclick={() => showTtsKey = !showTtsKey} title={showTtsKey ? 'Ocultar' : 'Mostrar'}>
+                {#if showTtsKey}
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>
+                {:else}
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+                {/if}
+              </button>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-title">Velocidad de lectura</span>
+              <span class="setting-desc">Velocidad de la voz sintetizada (0.25&ndash;4.0, normal = 1.0)</span>
+            </div>
+            <div class="opacity-wrap">
+              <input
+                type="range"
+                min="0.25"
+                max="4.0"
+                step="0.25"
+                bind:value={ttsSpeakingRate}
+                oninput={scheduleAutoSave}
+                class="opacity-slider"
+                style="--val: {((ttsSpeakingRate - 0.25) / (4.0 - 0.25)) * 100}"
+              />
+              <span class="opacity-value">{ttsSpeakingRate}x</span>
+            </div>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <span class="setting-title">Reproducir texto seleccionado</span>
+              <span class="setting-desc">Selecciona texto, presiona este atajo y se leer&#225; en voz alta</span>
+            </div>
+            <div class="hotkey-wrap">
+              {#if capturingTtsHotkey}
+                <div class="hotkey-capture" role="button" tabindex="0"
+                  onclick={() => capturingTtsHotkey = false}
+                  onkeydown={(e) => e.key === 'Enter' && (capturingTtsHotkey = false)}>
+                  <span class="capture-hint">Presiona la combinaci&#243;n&#8230;</span>
+                </div>
+              {:else}
+                <div class="hotkey-keys" role="button" tabindex="0"
+                  onclick={() => capturingTtsHotkey = true} title="Clic para cambiar"
+                  onkeydown={(e) => e.key === 'Enter' && (capturingTtsHotkey = true)}>
+                  {#each ttsHotkeyDisplay.split('+') as part}
+                    <kbd>{part}</kbd>
+                  {/each}
+                </div>
+              {/if}
             </div>
           </div>
         </div>
