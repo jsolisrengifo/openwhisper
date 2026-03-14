@@ -133,6 +133,7 @@ func main() {
 				if uintptr(widgetWindow.NativeWindow()) != 0 {
 					applyRoundedCorners(uintptr(widgetWindow.NativeWindow()), 90, 22, 5)
 					applyWindowOpacity(widgetWindow, opacityPct)
+					enforceTopmost(widgetWindow)
 					return
 				}
 				time.Sleep(50 * time.Millisecond)
@@ -166,6 +167,15 @@ func main() {
 	appStruct.hotkey.StartTTS(settings.TTSHotkey.Modifiers, settings.TTSHotkey.VKey)
 
 	startTray(wailsApp, widgetWindow)
+
+	// Periodically re-enforce TOPMOST so the taskbar cannot steal z-order.
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			enforceTopmost(widgetWindow)
+		}
+	}()
 
 	if err := wailsApp.Run(); err != nil {
 		println("Error:", err.Error())
