@@ -1,6 +1,6 @@
 <script>
   import { onMount, tick } from 'svelte';
-  import { TranscribeAudio, AskAI, ShowAnswer, PasteText, ShowSettingsWindow, HideWindow, GetSettings, EnableCancelHotkey, DisableCancelHotkey, AddHistoryItem } from '../bindings/openwhisper/app.js';
+  import { TranscribeAudio, AskAI, ShowAnswer, PasteText, ShowSettingsWindow, GetSettings, EnableCancelHotkey, DisableCancelHotkey, AddHistoryItem } from '../bindings/openwhisper/app.js';
   import { Events } from '@wailsio/runtime';
   // Non-reactive internal state
   let mediaRecorder = null;
@@ -11,142 +11,34 @@
   let isProcessing = false; // guard: evita doble transcripción/pegado
   let stream = null;
 
-  // Waveform state
-  let analyser = null;
-  let waveformAnimId = null;
-  let waveformCanvas = $state(null); // bound via bind:this
-
   // Reactive UI state
   let isConfigured = $state(false);
   let uiState = $state(null);
-  let statusMessage = $state('Listo');
-  let warnStatus = $state(false);
-  let hotkeyDisplay = $state('Ctrl+Space');
-  let askHotkeyDisplay = $state('Ctrl+Alt+A');
 
   // Pause state for recording
   let isPaused = $state(false);
 
-  // Marquee state for long status messages
-  let statusEl = $state(null);
-  let statusScrolling = $state(false);
-  let statusScrollPx = $state(0);
-  let statusDuration = $state('4s');
-
-  $effect(() => {
-    statusMessage; // reactive dependency
-    if (statusEl) {
-      const overflow = statusEl.scrollWidth - statusEl.clientWidth;
-      statusScrollPx = overflow > 0 ? overflow : 0;
-      statusScrolling = overflow > 0;
-      statusDuration = overflow > 0 ? `${Math.max(2, overflow / 45).toFixed(1)}s` : '4s';
-    }
-  });
-
-  function setState(state, message) {
+  function setState(state, _message) {
     uiState = state;
-    statusMessage = message ?? 'Listo';
-    warnStatus = false;
+    // Emit state to Go so the tray icon can be updated.
+    Events.Emit('widget:state-change', state ?? 'idle');
   }
 
   function setUnconfigured() {
-    statusMessage = '\u2699 Config. pendiente';
-    warnStatus = true;
-  }
-
-  // ── Waveform animation ───────────────────────────────────────────────────
-  function startWaveform(micStream) {
-    const canvas = waveformCanvas;
-    if (!canvas) return;
-    try {
-      const audioCtx = new AudioContext();
-      const source = audioCtx.createMediaStreamSource(micStream);
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 1024;
-      analyser.smoothingTimeConstant = 0.82;
-      source.connect(analyser);
-
-      const bufLen = analyser.fftSize;
-      const floatBuf = new Float32Array(bufLen);
-      const ctx2d = canvas.getContext('2d');
-
-      const W = canvas.width;   // 26
-      const H = canvas.height;  // 14
-      const mid = H / 2;
-
-      // Circular buffer of RMS samples for the smooth curve
-      const N_POINTS = 16;
-      const amp = new Float32Array(N_POINTS);
-      const SAMPLE_MS = 50;
-      let lastTs = -SAMPLE_MS;
-
-      function draw(ts) {
-        waveformAnimId = requestAnimationFrame(draw);
-
-        if (ts - lastTs >= SAMPLE_MS) {
-          lastTs = ts;
-          analyser.getFloatTimeDomainData(floatBuf);
-          let sum = 0;
-          for (let i = 0; i < bufLen; i++) sum += floatBuf[i] * floatBuf[i];
-          const rms = Math.sqrt(sum / bufLen);
-          amp.copyWithin(0, 1);
-          amp[N_POINTS - 1] = Math.min(1, rms * 6);
-        }
-
-        ctx2d.clearRect(0, 0, W, H);
-
-        // Draw smooth sine-like curve through amplitude points
-        ctx2d.beginPath();
-        ctx2d.lineWidth = 2;
-        ctx2d.lineCap = 'round';
-        ctx2d.lineJoin = 'round';
-        ctx2d.strokeStyle = '#ef5350';
-
-        const step = W / (N_POINTS - 1);
-        for (let i = 0; i < N_POINTS; i++) {
-          const x = i * step;
-          // Alternate sign for sine-like oscillation
-          const sign = (i % 2 === 0) ? 1 : -1;
-          const maxDeflection = mid - 4;
-          const y = mid + sign * amp[i] * maxDeflection;
-          if (i === 0) {
-            ctx2d.moveTo(x, y);
-          } else {
-            // Smooth bezier between points
-            const prevX = (i - 1) * step;
-            const prevSign = ((i - 1) % 2 === 0) ? 1 : -1;
-            const prevY = mid + prevSign * amp[i - 1] * maxDeflection;
-            const cpx = (prevX + x) / 2;
-            ctx2d.bezierCurveTo(cpx, prevY, cpx, y, x, y);
-          }
-        }
-        ctx2d.stroke();
-      }
-
-      requestAnimationFrame(draw);
-    } catch (_) {}
-  }
-
-  function stopWaveform() {
-    if (waveformAnimId) { cancelAnimationFrame(waveformAnimId); waveformAnimId = null; }
-    if (waveformCanvas) {
-      const ctx2d = waveformCanvas.getContext('2d');
-      ctx2d.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
-    }
-    analyser = null;
+    // No visual widget — just mark as unconfigured internally.
   }
 
   async function startRecording(askMode = false) {
     if (isRecording || isStarting || isProcessing) return;
     isPaused = false;
-    isStarting = true; // bloquear re-entradas mientras getUserMedia resuelve
+    isStarting = true;
     if (!isConfigured) { isStarting = false; ShowSettingsWindow(); return; }
 
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     } catch (err) {
       isStarting = false;
-      setState('error', 'Sin micrófono');
+      setState('error');
       setTimeout(() => setState(null), 3000);
       return;
     }
@@ -165,17 +57,14 @@
     isRecording = true;
     isAskMode = askMode;
     isStarting = false;
-    if (askMode) Events.Emit('ask:new-chat'); // limpiar historial previo en Ask.svelte
-    EnableCancelHotkey(); // registrar Escape global solo mientras se graba
-    setState('recording', askMode ? '¿Pregunta?' : 'Grabando');
-    await tick(); // esperar a que Svelte monte el canvas
-    startWaveform(stream);
+    if (askMode) Events.Emit('ask:new-chat');
+    EnableCancelHotkey();
+    setState('recording');
   }
 
   function stopRecording() {
     if (!isRecording || !mediaRecorder) return;
     isPaused = false;
-    stopWaveform();
     DisableCancelHotkey();
     mediaRecorder.stop();
     isRecording = false;
@@ -184,18 +73,16 @@
 
   function pauseRecording() {
     if (!isRecording || !mediaRecorder || isPaused) return;
-    stopWaveform();
     mediaRecorder.pause();
     isPaused = true;
-    setState('paused', 'En pausa');
+    setState('paused');
   }
 
   function resumeRecording() {
     if (!isRecording || !mediaRecorder || !isPaused) return;
     mediaRecorder.resume();
     isPaused = false;
-    setState('recording', isAskMode ? '¿Pregunta?' : 'Grabando');
-    tick().then(() => startWaveform(stream));
+    setState('recording');
   }
 
   function togglePause() {
@@ -206,63 +93,55 @@
   function cancelRecording() {
     if (!isRecording || !mediaRecorder) return;
     isPaused = false;
-    stopWaveform();
     DisableCancelHotkey();
-    mediaRecorder.onstop = null; // desconecta el handler para no transcribir
+    mediaRecorder.onstop = null;
     mediaRecorder.stop();
     isRecording = false;
     audioChunks = [];
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-    setState(null, 'Listo');
+    setState(null);
   }
 
   async function handleRecordingStop() {
-    if (isProcessing) return; // guard contra doble ejecución
+    if (isProcessing) return;
     isProcessing = true;
     const wasAskMode = isAskMode;
     isAskMode = false;
 
-    if (wasAskMode) {
-      setState('transcribing', 'Consultando IA…');
-    } else {
-      setState('transcribing', 'Transcribiendo');
-    }
+    setState('transcribing');
 
     const blob = new Blob(audioChunks, { type: 'audio/webm' });
-    audioChunks = []; // liberar memoria inmediatamente
+    audioChunks = [];
     const mimeType = blob.type || 'audio/webm';
 
     try {
       const base64 = await blobToBase64(blob);
 
       if (wasAskMode) {
-        // Modo preguntar a IA: mostrar respuesta en ventana flotante
         const answer = await AskAI(base64, mimeType);
         if (!answer || answer.trim() === '') {
-          setState('error', 'Sin respuesta');
+          setState('error');
           setTimeout(() => setState(null), 3000);
           return;
         }
         await ShowAnswer(answer.trim());
         AddHistoryItem(answer.trim(), 'ai').catch(() => {});
-        setState('done', '¡Listo!');
+        setState('done');
         setTimeout(() => setState(null), 2000);
       } else {
-        // Modo transcripción normal: pegar texto
         const text = await TranscribeAudio(base64, mimeType);
         if (!text || text.trim() === '') {
-          setState('error', 'Sin resultado');
+          setState('error');
           setTimeout(() => setState(null), 3000);
           return;
         }
         await PasteText(text.trim());
         AddHistoryItem(text.trim(), 'transcription').catch(() => {});
-        setState('done', '¡Pegado!');
+        setState('done');
         setTimeout(() => setState(null), 2000);
       }
     } catch (err) {
-      const msg = (err && err.message) ? err.message : String(err);
-      setState('error', msg.length > 30 ? msg.substring(0, 30) + '\u2026' : msg);
+      setState('error');
       setTimeout(() => setState(null), 5000);
     } finally {
       isProcessing = false;
@@ -291,8 +170,6 @@
     GetSettings().then(s => {
       isConfigured = !!(s.api_key && s.model);
       if (!isConfigured) setUnconfigured();
-      if (s.hotkey && s.hotkey.display) hotkeyDisplay = s.hotkey.display;
-      if (s.ask_hotkey && s.ask_hotkey.display) askHotkeyDisplay = s.ask_hotkey.display;
     }).catch(() => {
       isConfigured = false;
       setUnconfigured();
@@ -303,24 +180,20 @@
     const cancelCancelRecording     = Events.On('cancel-recording', cancelRecording);
     const cancelOpenSettings        = Events.On('open-settings', () => ShowSettingsWindow());
     const cancelTTSProcessing       = Events.On('tts:processing', () => {
-      setState('transcribing', 'Sintetizando…');
+      setState('transcribing');
     });
     const cancelTTSAudio            = Events.On('tts:audio', () => {
-      setState('done', '¡Reproduciendo!');
+      setState('done');
       setTimeout(() => setState(null), 2500);
     });
-    const cancelTTSError            = Events.On('tts:error', (msg) => {
-      const m = typeof msg === 'string' ? msg : (msg?.data ?? 'Error TTS');
-      const short = m.length > 28 ? m.substring(0, 28) + '…' : m;
-      setState('error', short);
+    const cancelTTSError            = Events.On('tts:error', () => {
+      setState('error');
       setTimeout(() => setState(null), 4000);
     });
     const cancelSettingsSaved       = Events.On('settings:saved', () => {
       GetSettings().then(s => {
         isConfigured = !!(s.api_key && s.model);
-        if (isConfigured) { setState(null, 'Listo'); } else { setUnconfigured(); }
-        if (s.hotkey && s.hotkey.display) hotkeyDisplay = s.hotkey.display;
-        if (s.ask_hotkey && s.ask_hotkey.display) askHotkeyDisplay = s.ask_hotkey.display;
+        if (isConfigured) { setState(null); } else { setUnconfigured(); }
       }).catch(() => {});
     });
 
@@ -337,38 +210,5 @@
   });
 </script>
 
-<div class="bar" style="--wails-draggable:drag">
-  <button
-    class="mic-btn"
-    class:recording={uiState === 'recording'}
-    class:paused={uiState === 'paused'}
-    class:transcribing={uiState === 'transcribing'}
-    class:done={uiState === 'done'}
-    class:error={uiState === 'error'}
-    title="Grabar ({hotkeyDisplay})"
-    style="--wails-draggable:no-drag"
-    onclick={toggleRecording}
-  >
-    <svg class="mic-icon" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-      <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-    </svg>
-  </button>
-  <div class="actions" style="--wails-draggable:no-drag">
-    {#if uiState === 'recording' || uiState === 'paused'}
-      <button class="btn-icon btn-pause" title={isPaused ? 'Reanudar' : 'Pausar'} onclick={togglePause}>
-        {#if isPaused}
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-        {:else}
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-        {/if}
-      </button>
-    {/if}
-    <button class="btn-icon btn-settings-toggle" title="Configuracion" onclick={() => ShowSettingsWindow()}>
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.37 1.04.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.57 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
-    </button>
-    <button class="btn-icon btn-hide" title="Ocultar" onclick={() => { if (isRecording) stopRecording(); HideWindow(); }}>
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg>
-    </button>
-  </div>
-</div>
+<!-- No visible UI — the system tray icon is the interface now. -->
+<div style="display:none"></div>

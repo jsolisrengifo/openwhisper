@@ -38,26 +38,25 @@ func main() {
 
 	appStruct.app = wailsApp
 
+	// Widget window is kept alive but invisible (1×1 px, hidden).
+	// WebView2 needs a browser context for getUserMedia / MediaRecorder.
 	widgetWindow := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             "widget",
-		Width:            100,
-		Height:           22,
-		MinWidth:         100,
-		MinHeight:        22,
-		MaxWidth:         100,
-		MaxHeight:        22,
+		Width:            1,
+		Height:           1,
+		MinWidth:         1,
+		MinHeight:        1,
+		MaxWidth:         1,
+		MaxHeight:        1,
 		DisableResize:    true,
 		Frameless:        true,
-		AlwaysOnTop:      true,
+		Hidden:           true,
 		BackgroundColour: application.NewRGBA(18, 18, 18, 255),
 		URL:              "/",
 		Windows: application.WindowsWindow{
-			// WS_EX_TOOLWINDOW (0x80)     → oculta de la barra de tareas y Alt-Tab
-			// WS_EX_TOPMOST    (0x08)     → siempre encima
-			// WS_EX_CONTROLPARENT (0x10000) → necesario para WebView2
-			// Evitamos WS_EX_NOACTIVATE (0x8000000) que usa HiddenOnTaskbar:true
-			// en alpha.74 y bloquea el drag al impedir activación de ventana.
-			ExStyle:     0x00010088,
+			// WS_EX_TOOLWINDOW (0x80) → hidden from taskbar and Alt-Tab
+			// WS_EX_CONTROLPARENT (0x10000) → needed for WebView2
+			ExStyle:     0x00010080,
 			DisableIcon: true,
 		},
 	})
@@ -113,33 +112,37 @@ func main() {
 	})
 	appStruct.askWindow = askWindow
 
+	ttsWindow := wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:             "tts",
+		Width:            280,
+		Height:           90,
+		MinWidth:         280,
+		MinHeight:        90,
+		MaxWidth:         280,
+		MaxHeight:        90,
+		DisableResize:    true,
+		Frameless:        true,
+		AlwaysOnTop:      true,
+		Hidden:           true,
+		BackgroundColour: application.NewRGBA(18, 18, 22, 255),
+		URL:              "/tts.html",
+		Windows: application.WindowsWindow{
+			ExStyle:     0x00010088, // WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_CONTROLPARENT
+			DisableIcon: true,
+		},
+	})
+	ttsWindow.RegisterHook(events.Windows.WindowClosing, func(e *application.WindowEvent) {
+		e.Cancel()
+		ttsWindow.Hide()
+	})
+	appStruct.ttsWindow = ttsWindow
+
 	settings, err := LoadSettings()
 	if err != nil {
 		s := DefaultSettings()
 		settings = &s
 	}
 	appStruct.settings = settings
-
-	// Apply the saved opacity once the WebView2 HWND is available.
-	// WindowShow fires before WebView2 fully initialises the native handle,
-	// so we retry in a goroutine until NativeWindow() returns a non-zero value.
-	widgetWindow.RegisterHook(events.Common.WindowShow, func(e *application.WindowEvent) {
-		if appStruct.settings == nil {
-			return
-		}
-		opacityPct := appStruct.settings.Opacity
-		go func() {
-			for i := 0; i < 40; i++ {
-				if uintptr(widgetWindow.NativeWindow()) != 0 {
-					applyRoundedCorners(uintptr(widgetWindow.NativeWindow()), 90, 22, 5)
-					applyWindowOpacity(widgetWindow, opacityPct)
-					enforceTopmost(widgetWindow)
-					return
-				}
-				time.Sleep(50 * time.Millisecond)
-			}
-		}()
-	})
 
 	// Apply opacity to ask window when it first shows
 	askWindow.RegisterHook(events.Common.WindowShow, func(e *application.WindowEvent) {
@@ -159,6 +162,24 @@ func main() {
 		}()
 	})
 
+	// Apply opacity to TTS window when it first shows
+	ttsWindow.RegisterHook(events.Common.WindowShow, func(e *application.WindowEvent) {
+		if appStruct.settings == nil {
+			return
+		}
+		opacityPct := appStruct.settings.Opacity
+		go func() {
+			for i := 0; i < 40; i++ {
+				if uintptr(ttsWindow.NativeWindow()) != 0 {
+					applyRoundedCorners(uintptr(ttsWindow.NativeWindow()), 280, 90, 12)
+					applyWindowOpacity(ttsWindow, opacityPct)
+					return
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+		}()
+	})
+
 	appStruct.hotkey = NewHotkeyManager(wailsApp, widgetWindow)
 	appStruct.setupAskContextCapture()
 	appStruct.setupTTSContextCapture()
@@ -166,16 +187,15 @@ func main() {
 	appStruct.hotkey.StartAsk(settings.AskHotkey.Modifiers, settings.AskHotkey.VKey)
 	appStruct.hotkey.StartTTS(settings.TTSHotkey.Modifiers, settings.TTSHotkey.VKey)
 
-	startTray(wailsApp, widgetWindow)
+	trayMgr := newTrayManager(wailsApp)
+	appStruct.trayManager = trayMgr
 
-	// Periodically re-enforce TOPMOST so the taskbar cannot steal z-order.
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			enforceTopmost(widgetWindow)
+	// Listen for state changes emitted by Widget.svelte and update the tray icon.
+	wailsApp.Event.On("widget:state-change", func(e *application.CustomEvent) {
+		if state, ok := e.Data.(string); ok {
+			trayMgr.SetState(state)
 		}
-	}()
+	})
 
 	if err := wailsApp.Run(); err != nil {
 		println("Error:", err.Error())

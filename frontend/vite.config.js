@@ -12,6 +12,7 @@ export default defineConfig({
         main: path.resolve('index.html'),
         settings: path.resolve('settings.html'),
         ask: path.resolve('ask.html'),
+        tts: path.resolve('tts.html'),
       },
     },
   },

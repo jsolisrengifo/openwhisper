@@ -14,8 +14,10 @@ type App struct {
 	widgetWindow   *application.WebviewWindow
 	settingsWindow *application.WebviewWindow
 	askWindow      *application.WebviewWindow
+	ttsWindow      *application.WebviewWindow
 	settings       *Settings
 	hotkey         *HotkeyManager
+	trayManager    *TrayManager
 
 	// Ask AI context capture — set by setupAskContextCapture, consumed by AskAI
 	pendingContextText string
@@ -217,6 +219,13 @@ func (a *App) HideAskWindow() {
 	}
 }
 
+// HideTTSWindow hides the compact TTS player window.
+func (a *App) HideTTSWindow() {
+	if a.ttsWindow != nil {
+		a.ttsWindow.Hide()
+	}
+}
+
 // EnableCancelHotkey registers Escape as a global hotkey to cancel recording.
 func (a *App) EnableCancelHotkey() {
 	if a.hotkey != nil {
@@ -265,18 +274,13 @@ func (a *App) SaveSettings(s Settings) error {
 		}
 	}
 	a.settings = &s
-	// Apply opacity change to the widget window
-	applyWindowOpacity(a.widgetWindow, s.Opacity)
+	// Apply opacity change to the ask and tts windows
 	applyWindowOpacity(a.askWindow, s.Opacity)
+	applyWindowOpacity(a.ttsWindow, s.Opacity)
 	// Notify all windows that settings have been updated
 	a.app.Event.Emit("settings:saved")
 	logger.Info("SaveSettings: saved ok", slog.Int("opacity", s.Opacity), slog.String("hotkey", s.Hotkey.Display))
 	return nil
-}
-
-// HideWindow hides the floating widget (used by the − button)
-func (a *App) HideWindow() {
-	a.widgetWindow.Hide()
 }
 
 // ShowSettingsWindow opens the settings window
@@ -387,11 +391,10 @@ func (a *App) setupTTSContextCapture() {
 		}
 
 		logger.Debug("TTS hotkey: captured text", "chars", len(textToSpeak))
-		// Show Ask window and signal processing state
-		a.askWindow.Show()
-		a.askWindow.Center()
-		a.askWindow.Focus()
-		a.app.Event.Emit("ask:new-chat")
+		// Show the compact TTS player window and signal processing state
+		a.ttsWindow.Show()
+		a.ttsWindow.Center()
+		a.ttsWindow.Focus()
 		a.app.Event.Emit("tts:processing")
 
 		rate := a.settings.TTSSpeakingRate

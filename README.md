@@ -1,6 +1,6 @@
 # OpenWhisper
 
-A lightweight, always-on-top floating dictation app. Press **Ctrl+Space** (or click the mic button) to record your voice, and OpenWhisper will transcribe it using your chosen AI provider and automatically paste the result wherever your cursor is. Press **Ctrl+Shift+Space** to ask a question directly to the AI and get the answer in a floating response window. Press **Ctrl+Alt+T** to read any selected text aloud using Google Cloud Text-to-Speech.
+A lightweight dictation app that lives in your **system tray**. Press **Ctrl+Space** to record your voice, and OpenWhisper will transcribe it using your chosen AI provider and automatically paste the result wherever your cursor is. Press **Ctrl+Shift+Space** to ask a question directly to the AI and get the answer in a floating response window. Press **Ctrl+Alt+T** to read any selected text aloud using Google Cloud Text-to-Speech.
 
 Built with [Go](https://go.dev/) + [Wails v3](https://v3.wails.io/)
 
@@ -8,19 +8,21 @@ Built with [Go](https://go.dev/) + [Wails v3](https://v3.wails.io/)
 
 ## Features
 
+- **System tray icon**  the app lives in the Windows system tray; the icon shows a color-coded dot reflecting the current state (🔴 recording, 🔵 transcribing, 🟢 done, 🟠 error, 🟡 paused, ⚪ idle)
+- **Left-click** on the tray icon toggles recording on/off from anywhere
+- **Right-click** on the tray icon opens a context menu: **Configuración** (opens settings) and **Salir** (exits the app)
 - **Global hotkey**  `Ctrl+Space` starts/stops recording from any app
 - **Ask AI hotkey**  `Ctrl+Shift+Space` records a spoken question and shows the AI answer in a floating window
 - **In-situ editing**  select text before pressing the Ask hotkey to use it as context — the AI edits or answers in relation to that text
-- **Text-to-Speech hotkey**  `Ctrl+Alt+T` reads the currently selected text aloud via Google Cloud TTS — includes an inline audio player with play/pause and progress bar
+- **Text-to-Speech hotkey**  `Ctrl+Alt+T` reads the currently selected text aloud via Google Cloud TTS — opens a compact TTS player window with play/pause and progress bar
 - **Multi-provider**  switch between **Google Gemini** and **OpenRouter** (100+ models); each provider stores its own API key and last-used model independently
 - **Dictation profiles**  create multiple named profiles, each with a custom prompt — switch the active profile at any time
 - **Auto-paste**  transcribed text is pasted directly at your cursor position
-- **Pause & resume recording**  press the ⏸ button in the widget during an active recording to pause; press ▶ to continue — all audio chunks are preserved and sent together when you stop
+- **Pause & resume recording**  press the pause hotkey during an active recording to pause; press again to resume — all audio chunks are preserved and sent together when you stop
 - **Dictation history**  the last 10 transcriptions and AI responses are saved to disk; access them from the **Historial** tab in Settings and copy any entry to the clipboard with one click
-- **Always on top**  frameless floating window, stays visible over other apps
-- **Minimal UI**  compact widget window, dark theme, no distractions
+- **Minimal footprint**  no visible window — the app runs entirely from the system tray with on-demand floating windows for AI answers and TTS playback
 - **Secure credential storage**  API keys stored in the OS native keyring, never in plain text
-- **Live configuration refresh**  the widget updates instantly when settings are saved
+- **Live configuration refresh**  settings take effect instantly when saved
 
 ---
 
@@ -91,9 +93,9 @@ Enter any model name compatible with the selected provider, e.g.:
 
 All shortcuts are fully customizable — click the key combination to capture a new one.
 
-### Pause & Resume (widget button)
+### Pause & Resume
 
-While a recording is active, a small **⏸** button appears in the widget toolbar. Click it to pause the microphone; click **▶** to resume. All audio captured before and after the pause is merged into a single request when you stop. This is useful for long dictations where you need a moment to think before continuing.
+While a recording is active, press the recording hotkey again to pause the microphone; press it once more to resume. All audio captured before and after the pause is merged into a single request when you stop. This is useful for long dictations where you need a moment to think before continuing.
 
 ### Text-to-Speech (Texto a Voz section)
 
@@ -108,8 +110,8 @@ OpenWhisper can read any text aloud using the **Google Cloud Text-to-Speech API*
 
 1. Select any text in any application.
 2. Press the TTS hotkey (`Ctrl+Alt+T` by default).
-3. OpenWhisper captures the selection via `Ctrl+C`, sends it to Google Cloud TTS, and opens the Ask window with an audio player.
-4. The audio plays automatically with controls to **play/pause**, a **progress bar**, and a **stop** button.
+3. OpenWhisper captures the selection via `Ctrl+C`, sends it to Google Cloud TTS, and opens a compact **TTS player window** (always-on-top, 280×90 px).
+4. The audio plays automatically with controls to **play/pause**, a **progress bar**, and a **duration timer**.
 
 > **Voice:** `es-US-Standard-B` (male, US Spanish) with the `small-bluetooth-speaker-class-device` audio profile. Text longer than ~4 500 characters is truncated automatically.
 
@@ -189,11 +191,13 @@ wails3 generate bindings -d frontend/bindings
 | Frontend | [Svelte 5](https://svelte.dev/) + Vite 5 |
 | Runtime bridge | [@wailsio/runtime](https://www.npmjs.com/package/@wailsio/runtime) |
 | Renderer | WebView2 (Chromium) |
+| System tray | Wails v3 `SystemTray` API with runtime-generated PNG icons |
 | Transcription / Q&A | Google Gemini API / OpenRouter API |
 | Text-to-Speech | [Google Cloud Text-to-Speech API](https://cloud.google.com/text-to-speech) |
 | Credential storage | [go-keyring](https://github.com/zalando/go-keyring) (Windows Credential Manager) |
 | Global hotkeys | Windows `RegisterHotKey` API |
 | Auto-paste | Windows `keybd_event` API |
+| Window styling | Windows `DwmSetWindowAttribute` (Win 11) / GDI regions (Win 10) |
 | Task runner | [Task](https://taskfile.dev/) |
 
 ---
